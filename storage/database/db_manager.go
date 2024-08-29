@@ -139,6 +139,10 @@ type DBManager interface {
 
 	WriteMerkleProof(key, value []byte)
 
+	// from accessors_trace.go
+	ReadTxTrace(hash common.Hash) []byte
+	WriteTxTrace(hash common.Hash, data []byte) error
+
 	// Bytecodes related operations
 	ReadCode(hash common.Hash) []byte
 	ReadCodeWithPrefix(hash common.Hash) []byte
@@ -330,6 +334,7 @@ const (
 	StateTrieDB
 	StateTrieMigrationDB
 	TxLookUpEntryDB
+	TxTraceDB
 	bridgeServiceDB
 	SnapshotDB
 	// databaseEntryTypeSize should be the last item in this list!!
@@ -371,6 +376,7 @@ var dbBaseDirs = [databaseEntryTypeSize]string{
 	"statetrie",
 	"statetrie_migrated", // "statetrie_migrated_#N" path will be used. (#N is a migrated block number.)
 	"txlookup",
+	"txtrace",
 	"bridgeservice",
 	"snapshot",
 }
@@ -384,7 +390,8 @@ var dbConfigRatio = [databaseEntryTypeSize]int{
 	5,  // ReceiptsDB
 	40, // StateTrieDB
 	37, // StateTrieMigrationDB
-	2,  // TXLookUpEntryDB
+	1,  // TXLookUpEntryDB
+	1,  // TXTraceDB
 	1,  // bridgeServiceDB
 	3,  // SnapshotDB
 }
@@ -1764,6 +1771,26 @@ func (dbm *databaseManager) WriteMerkleProof(key, value []byte) {
 	if err := db.Put(key, value); err != nil {
 		logger.Crit("Failed to write merkle proof", "err", err)
 	}
+}
+
+// ReadTxTrace retrieves the result of tx by evm-tracing which stores in db.
+func (dbm *databaseManager) ReadTxTrace(hash common.Hash) []byte {
+	db := dbm.getDatabase(TxTraceDB)
+	data, err := db.Get(txTraceKey(hash))
+	if err != nil {
+		logger.Error("Failed to read tx trace result %v", err)
+	}
+	return data
+}
+
+// WriteTxTrace write the result of tx tracing by evm-tracing to db.
+func (dbm *databaseManager) WriteTxTrace(hash common.Hash, data []byte) error {
+	db := dbm.getDatabase(TxTraceDB)
+	if err := db.Put(txTraceKey(hash), data); err != nil {
+		logger.Error("Failed to write tx trace result %v", err)
+		return err
+	}
+	return nil
 }
 
 // ReadCode retrieves the contract code of the provided code hash.

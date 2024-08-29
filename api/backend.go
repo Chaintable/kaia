@@ -33,6 +33,7 @@ import (
 	"github.com/kaiachain/kaia/blockchain/state"
 	"github.com/kaiachain/kaia/blockchain/types"
 	"github.com/kaiachain/kaia/blockchain/vm"
+	"github.com/kaiachain/kaia/blockchain/vm/txtracev2"
 	"github.com/kaiachain/kaia/common"
 	"github.com/kaiachain/kaia/consensus"
 	"github.com/kaiachain/kaia/event"
@@ -83,6 +84,7 @@ type Backend interface {
 	SubscribeChainHeadEvent(ch chan<- blockchain.ChainHeadEvent) event.Subscription
 	SubscribeChainSideEvent(ch chan<- blockchain.ChainSideEvent) event.Subscription
 	IsParallelDBWrite() bool
+	GetTxTraceStore() txtracev2.Store
 
 	IsSenderTxHashIndexingEnabled() bool
 

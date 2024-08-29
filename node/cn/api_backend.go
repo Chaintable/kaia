@@ -35,6 +35,7 @@ import (
 	"github.com/kaiachain/kaia/blockchain/state"
 	"github.com/kaiachain/kaia/blockchain/types"
 	"github.com/kaiachain/kaia/blockchain/vm"
+	"github.com/kaiachain/kaia/blockchain/vm/txtracev2"
 	"github.com/kaiachain/kaia/common"
 	"github.com/kaiachain/kaia/consensus"
 	"github.com/kaiachain/kaia/event"
@@ -417,4 +418,13 @@ func (b *CNAPIBackend) GetTotalSupply(ctx context.Context, blockNrOrHash rpc.Blo
 		return nil, err
 	}
 	return b.cn.supplyManager.GetTotalSupply(block.NumberU64())
+}
+
+
+func (b *CNAPIBackend) GetTxTraceStore() txtracev2.Store {
+	return b.cn.blockchain.TxTraceStore()
+}
+
+func (b *CNAPIBackend) GetStateCache() state.Database {
+	return b.cn.blockchain.StateCache()
 }

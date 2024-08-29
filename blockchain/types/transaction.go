@@ -1090,3 +1090,15 @@ func NewMessage(from common.Address, to *common.Address, nonce uint64, amount *b
 
 	return transaction
 }
+
+func (tx *Transaction) IsValueTransfer() bool {
+	return tx.Type().IsValueTransfer() || (tx.Value().Uint64() > 0 && tx.IsEmptyData())
+}
+
+func (tx *Transaction) IsEmptyData() bool {
+	tp, ok := tx.data.(TxInternalDataPayload)
+	if !ok {
+		return true
+	}
+	return len(tp.GetPayload()) == 0
+}

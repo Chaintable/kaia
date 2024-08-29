@@ -598,6 +598,16 @@ func (s *CN) APIs() []rpc.API {
 			Service:   api.NewPrivateDebugAPI(s.APIBackend),
 			Public:    false,
 			IPCOnly:   s.config.DisableUnsafeDebug,
+		}, {
+			Namespace: "trace",
+			Version:   "1.0",
+			Service:   api.NewPublicTxTraceAPI(s.APIBackend),
+			Public:    true,
+		}, {
+			Namespace: "pre",
+			Version:   "1.0",
+			Service:   api.NewPreExecAPI(s.APIBackend),
+			Public:    true,
 		},
 	}
 

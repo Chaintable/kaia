@@ -277,6 +277,9 @@ func (sm *supplyManager) GetTotalSupply(num uint64) (*TotalSupply, error) {
 func (sm *supplyManager) catchup() {
 	defer sm.wg.Done()
 
+	// NOTE we have no need to know KLAY totalSupply, and our pruned chain node is unable to calculate the total supply
+	return
+
 	var (
 		headNum = sm.chain.CurrentBlock().NumberU64()
 		lastNum = sm.db.ReadLastSupplyCheckpointNumber()

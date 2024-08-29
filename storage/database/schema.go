@@ -117,6 +117,7 @@ var (
 	childOperatorFeePayerPrefix  = []byte("childOperatorFeePayer")
 
 	valueTransferTxHashPrefix = []byte("vt-tx-hash-key-") // Prefix + hash -> hash
+	txTracePrefix             = []byte("txtrace")         // CodePrefix + code hash -> account code
 
 	// bloomBitsPrefix + bit (uint16 big endian) + section (uint64 big endian) + hash -> bloom bits
 	bloomBitsPrefix = []byte("B")
@@ -314,4 +315,9 @@ func (c *SupplyCheckpoint) Copy() *SupplyCheckpoint {
 
 func supplyCheckpointKey(blockNumber uint64) []byte {
 	return append(supplyCheckpointPrefix, common.Int64ToByteBigEndian(blockNumber)...)
+}
+
+// txTraceKey = txTracePrefix + hash
+func txTraceKey(hash common.Hash) []byte {
+	return append(txTracePrefix, hash.Bytes()...)
 }

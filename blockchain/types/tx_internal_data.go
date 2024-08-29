@@ -672,3 +672,7 @@ func calculateTxSize(data TxInternalData) common.StorageSize {
 	rlp.Encode(&c, data)
 	return common.StorageSize(c)
 }
+
+func (t TxType) IsValueTransfer() bool {
+	return t == TxTypeValueTransfer || t == TxTypeFeeDelegatedValueTransfer || t == TxTypeFeeDelegatedValueTransferWithRatio
+}

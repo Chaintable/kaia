@@ -33,6 +33,7 @@ import (
 	"github.com/kaiachain/kaia/blockchain/state"
 	"github.com/kaiachain/kaia/blockchain/types"
 	"github.com/kaiachain/kaia/blockchain/vm"
+	"github.com/kaiachain/kaia/blockchain/vm/txtracev2"
 	"github.com/kaiachain/kaia/common"
 	"github.com/kaiachain/kaia/consensus"
 	"github.com/kaiachain/kaia/datasync/downloader"
@@ -321,4 +322,6 @@ type BlockChain interface {
 
 	// Snapshot
 	Snapshots() *snapshot.Tree
+
+	TxTraceStore() txtracev2.Store
 }

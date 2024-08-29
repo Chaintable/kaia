@@ -40,6 +40,7 @@ import (
 	"github.com/kaiachain/kaia/blockchain/state"
 	"github.com/kaiachain/kaia/blockchain/types"
 	"github.com/kaiachain/kaia/blockchain/vm"
+	"github.com/kaiachain/kaia/blockchain/vm/txtracev2"
 	"github.com/kaiachain/kaia/common"
 	"github.com/kaiachain/kaia/common/hexutil"
 	"github.com/kaiachain/kaia/common/mclock"
@@ -157,8 +158,9 @@ type gcBlock struct {
 // included in the canonical one where as GetBlockByNumber always represents the
 // canonical chain.
 type BlockChain struct {
-	chainConfig *params.ChainConfig // Chain & network configuration
-	cacheConfig *CacheConfig        // stateDB caching and trie caching/pruning configuration
+	chainConfig  *params.ChainConfig // Chain & network configuration
+	cacheConfig  *CacheConfig        // stateDB caching and trie caching/pruning configuration
+	txTraceStore txtracev2.Store
 
 	db      database.DBManager // Low level persistent database to store final content in
 	snaps   *snapshot.Tree     // Snapshot tree for fast trie leaf access
@@ -272,6 +274,10 @@ func NewBlockChain(db database.DBManager, cacheConfig *CacheConfig, chainConfig 
 	bc.validator = NewBlockValidator(chainConfig, bc, engine)
 	bc.prefetcher = newStatePrefetcher(chainConfig, bc, engine)
 	bc.processor = NewStateProcessor(chainConfig, bc, engine)
+
+	if vmConfig.EnableInternalTxTracing {
+		bc.txTraceStore = txtracev2.NewTraceStore(db)
+	}
 
 	var err error
 	bc.hc, err = NewHeaderChain(db, chainConfig, engine, bc.getProcInterrupt)
@@ -2761,6 +2767,12 @@ func (bc *BlockChain) ApplyTransaction(chainConfig *params.ChainConfig, author *
 	// Create a new environment which holds all relevant information
 	// about the transaction and calling mechanisms.
 	vmenv := vm.NewEVM(blockContext, txContext, statedb, chainConfig, vmConfig)
+	// Assert tracer is txtrace.StructLogger, and fill into
+	// essential info to it.
+	if vmConfig.EnableInternalTxTracing {
+		vmConfig.Debug = true
+		vmConfig.Tracer = txtracev2.NewOeTracer(bc.TxTraceStore(), header.Hash(), header.Number, tx.Hash(), uint64(statedb.TxIndex()))
+	}
 	// Apply the transaction to the current state (included in the env)
 	result, err := ApplyMessage(vmenv, msg)
 	if err != nil {
@@ -2785,6 +2797,14 @@ func (bc *BlockChain) ApplyTransaction(chainConfig *params.ChainConfig, author *
 	receipt.Logs = statedb.GetLogs(tx.Hash())
 	receipt.Bloom = types.CreateBloom(types.Receipts{receipt})
 
+	// Finalize trace logger result and save to underlying database if necessary.
+	if vmConfig.Tracer != nil {
+		oetracer, ok := vmConfig.Tracer.(*txtracev2.OeTracer)
+		if ok {
+			oetracer.PersistTrace()
+		}
+	}
+
 	return receipt, internalTrace, err
 }
 
@@ -2805,6 +2825,9 @@ func GetInternalTxTrace(tracer vm.Tracer) (*vm.InternalTxTrace, error) {
 			return nil, err
 		}
 		internalTxTrace = callTrace.ToInternalTxTrace()
+	case *txtracev2.OeTracer:
+		internalTxTrace = nil
+		err = nil
 	default:
 		logger.Error("To trace internal transactions, VM tracer type should be vm.InternalTxTracer", "actualType", reflect.TypeOf(tracer).String())
 		return nil, ErrInvalidTracer
@@ -2826,4 +2849,9 @@ func CheckBlockChainVersion(chainDB database.DBManager) error {
 		chainDB.WriteDatabaseVersion(BlockChainVersion)
 	}
 	return nil
+}
+
+// TxTraceStore returns the underlying txtrace store object.
+func (bc *BlockChain) TxTraceStore() txtracev2.Store {
+	return bc.txTraceStore
 }

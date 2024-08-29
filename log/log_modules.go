@@ -129,6 +129,8 @@ const (
 	FORK
 	NodeCnGasPrice
 
+	BlockchainVmOeTracer
+
 	// ModuleNameLen should be placed at the end of the list.
 	ModuleNameLen
 )
@@ -205,4 +207,6 @@ var moduleNames = [ModuleNameLen]string{
 	"kas",
 	"fork",
 	"node/cn/gasprice",
+
+	"blockchain/vm/oetracer",
 }
