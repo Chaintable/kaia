@@ -194,8 +194,10 @@ func (p *PreExecAPI) TraceMany(ctx context.Context, origins []PreExecTx) ([]PreR
 		execResult, kerr := blockchain.ApplyMessage(evm, msg)
 		if kerr != nil {
 			preRes := PreResult{
-				Error:   toPreError(kerr, execResult),
-				GasUsed: execResult.UsedGas,
+				Error: toPreError(kerr, execResult),
+			}
+			if execResult != nil {
+				preRes.GasUsed = execResult.UsedGas
 			}
 			preResList = append(preResList, preRes)
 			continue
