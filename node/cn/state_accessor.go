@@ -177,6 +177,7 @@ func (cn *CN) stateAtBlock(block *types.Block, reexec uint64, base *state.StateD
 			return nil, nil, fmt.Errorf("processing block %d failed: %v", current.NumberU64(), err)
 		}
 		// Finalize the state so any modifications are written to the trie
+		statedb.SetBlockNumber(block.NumberU64())
 		root, err := statedb.Commit(true)
 		if err != nil {
 			return nil, nil, err

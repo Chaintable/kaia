@@ -203,6 +203,7 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 				panic(fmt.Sprintf("block finalize error: %v", err))
 			}
 			// Write state changes to db
+			stateDB.SetBlockNumber(block.NumberU64())
 			root, err := stateDB.Commit(true)
 			if err != nil {
 				panic(fmt.Sprintf("state write error: %v", err))

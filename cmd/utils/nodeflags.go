@@ -126,6 +126,9 @@ func KenAppFlags() []cli.Flag {
 	flags = append(flags, debug.Flags...)
 	flags = append(flags, DBMigrationDstFlags...)
 	flags = append(flags, ChainDataFetcherFlags...)
+
+	// state diff
+	flags = append(flags, StateDiffDirFlag)
 	return flags
 }
 

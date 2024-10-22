@@ -167,6 +167,9 @@ func (ch resetObjectChange) revert(s *StateDB) {
 	if !ch.prevdestruct && s.snap != nil {
 		delete(s.snapDestructs, ch.prev.addrHash)
 	}
+	if !ch.prevdestruct {
+		delete(s.Destructs, ch.prev.addrHash)
+	}
 }
 
 func (ch resetObjectChange) dirtied() *common.Address {

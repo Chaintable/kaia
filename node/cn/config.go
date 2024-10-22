@@ -149,6 +149,8 @@ type Config struct {
 	// Gas Price Oracle options
 	GPO gasprice.Config
 
+	StateDiffDir string
+
 	// Enables tracking of SHA3 preimages in the VM
 	EnablePreimageRecording bool
 	// Enables collecting internal transaction data during processing a block

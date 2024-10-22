@@ -46,6 +46,7 @@ import (
 	"github.com/kaiachain/kaia/crypto"
 	"github.com/kaiachain/kaia/datasync/downloader"
 	"github.com/kaiachain/kaia/event"
+	"github.com/kaiachain/kaia/flat-state-history/flatdb"
 	"github.com/kaiachain/kaia/governance"
 	"github.com/kaiachain/kaia/networks/p2p"
 	"github.com/kaiachain/kaia/networks/rpc"
@@ -209,6 +210,14 @@ func New(ctx *node.ServiceContext, config *Config) (*CN, error) {
 	}
 
 	chainDB := CreateDB(ctx, config, "chaindata")
+
+	if config.StateDiffDir != "" {
+		err := flatdb.Init(config.StateDiffDir, 512, 32, false)
+		if err != nil {
+			logger.Error("Failed to init flatdb", "error", err)
+			return nil, err
+		}
+	}
 
 	chainConfig, genesisHash, genesisErr := blockchain.SetupGenesisBlock(chainDB, config.Genesis, config.NetworkId, config.IsPrivate, false)
 	if _, ok := genesisErr.(*params.ConfigCompatError); genesisErr != nil && !ok {
@@ -820,6 +829,8 @@ func (s *CN) Stop() error {
 	s.blockchain.Stop()
 	s.chainDB.Close()
 	s.eventMux.Stop()
+
+	flatdb.Close()
 
 	return nil
 }

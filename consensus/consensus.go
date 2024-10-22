@@ -65,6 +65,8 @@ type ChainReader interface {
 
 	// StateAt() retrieves statedb on a particular point in time
 	StateAt(root common.Hash) (*state.StateDB, error)
+
+	StateAtUseFlat(root common.Hash, blockNumber uint64) (*state.StateDB, error)
 }
 
 // Engine is an algorithm agnostic consensus engine.

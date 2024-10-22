@@ -425,6 +425,7 @@ func doGetProof(ctx context.Context, b Backend, address common.Address, storageK
 	if state == nil || err != nil {
 		return nil, err
 	}
+	defer state.Close()
 	codeHash := state.GetCodeHash(address)
 
 	contractStorageRootExt, err := state.GetContractStorageRoot(address)
@@ -1367,6 +1368,7 @@ func EthDoCall(ctx context.Context, b Backend, args EthTransactionArgs, blockNrO
 	if state == nil || err != nil {
 		return nil, err
 	}
+	defer state.Close()
 	if err := overrides.Apply(state); err != nil {
 		return nil, err
 	}
@@ -1459,6 +1461,7 @@ func EthDoEstimateGas(ctx context.Context, b Backend, args EthTransactionArgs, b
 	if err != nil {
 		return 0, err
 	}
+	defer state.Close()
 	if err := overrides.Apply(state); err != nil {
 		return 0, err
 	}
@@ -1536,6 +1539,7 @@ func AccessList(ctx context.Context, b Backend, blockNrOrHash rpc.BlockNumberOrH
 	if db == nil || err != nil {
 		return nil, 0, nil, err
 	}
+	defer db.Close()
 	gasCap := uint64(0)
 	if rpcGasCap := b.RPCGasCap(); rpcGasCap != nil {
 		gasCap = rpcGasCap.Uint64()
@@ -1593,6 +1597,7 @@ func AccessList(ctx context.Context, b Backend, blockNrOrHash rpc.BlockNumberOrH
 
 		// Copy the original db so we don't modify it
 		statedb := db.Copy()
+		defer statedb.Close()
 		// Set the accesslist to the last al
 		args.AccessList = &accessList
 		msg, err := toMsg()

@@ -39,6 +39,7 @@ import (
 	"github.com/kaiachain/kaia/common"
 	"github.com/kaiachain/kaia/consensus"
 	"github.com/kaiachain/kaia/event"
+	"github.com/kaiachain/kaia/flat-state-history/flatdb"
 	"github.com/kaiachain/kaia/governance"
 	"github.com/kaiachain/kaia/networks/rpc"
 	"github.com/kaiachain/kaia/node/cn/gasprice"
@@ -197,6 +198,10 @@ func (b *CNAPIBackend) StateAndHeaderByNumber(ctx context.Context, blockNr rpc.B
 		return nil, nil, err
 	}
 	stateDb, err := b.cn.BlockChain().StateAt(header.Root)
+	if err != nil && flatdb.GetReader() != nil {
+		stateDb, err := b.cn.BlockChain().StateAtUseFlat(header.Root, header.Number.Uint64())
+		return stateDb, header, err
+	}
 	return stateDb, header, err
 }
 
@@ -210,6 +215,10 @@ func (b *CNAPIBackend) StateAndHeaderByNumberOrHash(ctx context.Context, blockNr
 			return nil, nil, fmt.Errorf("header for hash not found")
 		}
 		stateDb, err := b.cn.BlockChain().StateAt(header.Root)
+		if err != nil && flatdb.GetReader() != nil {
+			stateDb, err := b.cn.BlockChain().StateAtUseFlat(header.Root, header.Number.Uint64())
+			return stateDb, header, err
+		}
 		return stateDb, header, err
 	}
 	return nil, nil, fmt.Errorf("invalid arguments; neither block nor hash specified")
@@ -420,7 +429,6 @@ func (b *CNAPIBackend) GetTotalSupply(ctx context.Context, blockNrOrHash rpc.Blo
 	}
 	return b.cn.supplyManager.GetTotalSupply(block.NumberU64())
 }
-
 
 func (b *CNAPIBackend) GetTxTraceStore() txtracev2.Store {
 	return b.cn.blockchain.TxTraceStore()

@@ -141,6 +141,7 @@ func handleNative(ctx context.Context, b Backend, arg EthTransactionArgs, blockN
 	if state == nil || err != nil {
 		return nil, err
 	}
+	defer state.Close()
 	if err := overrides.Apply(state); err != nil {
 		return nil, err
 	}
@@ -277,6 +278,7 @@ func (s *EthereumAPI) MultiCall(ctx context.Context, args []EthTransactionArgs, 
 	if state == nil || err != nil {
 		return nil, err
 	}
+	defer state.Close()
 
 	blockTime := header.Time
 	ret := make([]*callResult, len(args))

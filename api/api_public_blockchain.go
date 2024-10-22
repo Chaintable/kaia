@@ -85,6 +85,7 @@ func (s *PublicBlockChainAPI) IsContractAccount(ctx context.Context, address com
 	if err != nil {
 		return false, err
 	}
+	defer state.Close()
 	return state.IsContractAccount(address), state.Error()
 }
 
@@ -126,6 +127,7 @@ func (s *PublicBlockChainAPI) GetBalance(ctx context.Context, address common.Add
 	if err != nil {
 		return nil, err
 	}
+	defer state.Close()
 	return (*hexutil.Big)(state.GetBalance(address)), state.Error()
 }
 
@@ -136,6 +138,7 @@ func (s *PublicBlockChainAPI) AccountCreated(ctx context.Context, address common
 	if err != nil {
 		return false, err
 	}
+	defer state.Close()
 	return state.Exist(address), state.Error()
 }
 
@@ -145,6 +148,7 @@ func (s *PublicBlockChainAPI) GetAccount(ctx context.Context, address common.Add
 	if err != nil {
 		return &account.AccountSerializer{}, err
 	}
+	defer state.Close()
 	acc := state.GetAccount(address)
 	if acc == nil {
 		return &account.AccountSerializer{}, err
@@ -230,6 +234,7 @@ func (s *PublicBlockChainAPI) GetCode(ctx context.Context, address common.Addres
 	if err != nil {
 		return nil, err
 	}
+	defer state.Close()
 	code := state.GetCode(address)
 	return code, state.Error()
 }
@@ -242,6 +247,7 @@ func (s *PublicBlockChainAPI) GetStorageAt(ctx context.Context, address common.A
 	if err != nil {
 		return nil, err
 	}
+	defer state.Close()
 	res := state.GetState(address, common.HexToHash(key))
 	return res[:], state.Error()
 }
@@ -253,6 +259,7 @@ func (s *PublicBlockChainAPI) GetAccountKey(ctx context.Context, address common.
 	if err != nil {
 		return &accountkey.AccountKeySerializer{}, err
 	}
+	defer state.Close()
 	if state.Exist(address) == false {
 		return nil, nil
 	}
@@ -307,6 +314,7 @@ func DoCall(ctx context.Context, b Backend, args CallArgs, blockNrOrHash rpc.Blo
 	if state == nil || err != nil {
 		return nil, 0, err
 	}
+	defer state.Close()
 	// Setup context so it may be cancelled the call has completed
 	// or, in case of unmetered gas, setup a context with a timeout.
 	var cancel context.CancelFunc
@@ -424,6 +432,7 @@ func DoEstimateGas(ctx context.Context, b Backend, args CallArgs, blockNrOrHash 
 	if err != nil {
 		return 0, err
 	}
+	defer state.Close()
 	if err := overrides.Apply(state); err != nil {
 		return 0, err
 	}

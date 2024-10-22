@@ -60,6 +60,7 @@ type blockChain interface {
 	GetBlockByNumber(number uint64) *types.Block
 	GetReceiptsByBlockHash(hash common.Hash) types.Receipts
 	StateAt(root common.Hash) (*state.StateDB, error)
+	StateAtUseFlat(root common.Hash, blockNumber uint64) (*state.StateDB, error)
 	Config() *params.ChainConfig
 	CurrentHeader() *types.Header
 	GetBlock(hash common.Hash, number uint64) *types.Block
@@ -318,6 +319,7 @@ func PreloadStakingInfo(headers []*types.Header) ([]uint64, error) {
 			return nil, fmt.Errorf("processing block %d failed: %v", current.NumberU64(), err)
 		}
 		// Finalize the state so any modifications are written to the trie
+		statedb.SetBlockNumber(current.NumberU64())
 		root, err := statedb.Commit(true)
 		if err != nil {
 			return nil, err

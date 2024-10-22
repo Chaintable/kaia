@@ -5,6 +5,7 @@
 package mocks
 
 import (
+	"errors"
 	io "io"
 	big "math/big"
 	reflect "reflect"
@@ -852,6 +853,11 @@ func (m *MockBlockChain) StateAt(arg0 common.Hash) (*state.StateDB, error) {
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
+
+func (bc *MockBlockChain) StateAtUseFlat(root common.Hash, blockNumber uint64) (*state.StateDB, error) {
+	return nil,errors.New("not support stateat useflat for mock")
+}
+
 
 // StateAt indicates an expected call of StateAt.
 func (mr *MockBlockChainMockRecorder) StateAt(arg0 interface{}) *gomock.Call {

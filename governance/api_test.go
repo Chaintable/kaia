@@ -320,7 +320,11 @@ func (bc *testBlockChain) GetBlockByNumber(num uint64) *types.Block {
 	return types.NewBlockWithHeader(bc.GetHeaderByNumber(num))
 }
 func (bc *testBlockChain) StateAt(root common.Hash) (*state.StateDB, error) { return nil, nil }
-func (bc *testBlockChain) State() (*state.StateDB, error)                   { return nil, nil }
+func (bc *testBlockChain) StateAtUseFlat(root common.Hash, blockNumber uint64) (*state.StateDB, error) {
+	return nil, nil
+}
+
+func (bc *testBlockChain) State() (*state.StateDB, error) { return nil, nil }
 func (bc *testBlockChain) Config() *params.ChainConfig {
 	return bc.config
 }

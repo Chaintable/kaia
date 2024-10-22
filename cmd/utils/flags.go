@@ -2009,6 +2009,11 @@ var (
 		Category: "GAS PRICE ORACLE",
 	}
 
+	StateDiffDirFlag = &cli.StringFlag{
+		Name:  "statediff.dir",
+		Usage: "Data directory for store state diff",
+	}
+
 	// TODO-Kaia-Bootnode: Add bootnode's metric options
 	// TODO-Kaia-Bootnode: Implements bootnode's RPC
 )
