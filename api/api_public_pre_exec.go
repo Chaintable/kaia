@@ -2,14 +2,12 @@ package api
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/big"
 	"strings"
 
 	"github.com/kaiachain/kaia/accounts/abi"
 	"github.com/kaiachain/kaia/blockchain"
-	"github.com/kaiachain/kaia/blockchain/state"
 	"github.com/kaiachain/kaia/blockchain/types"
 	"github.com/kaiachain/kaia/blockchain/vm"
 	"github.com/kaiachain/kaia/blockchain/vm/txtracev2"
@@ -93,7 +91,6 @@ func (p *PreExecAPI) TraceMany(ctx context.Context, origins []PreExecTx) ([]PreR
 		return nil, err
 	}
 	for i := 0; i < len(origins); i++ {
-		stateOld := state.Copy()
 		origin := origins[i]
 		if origin.From == nil {
 			origin.From = &common.Address{} // fake From address
@@ -191,186 +188,36 @@ func (p *PreExecAPI) TraceMany(ctx context.Context, origins []PreExecTx) ([]PreR
 			continue
 		}
 		state.SetTxContext(msg.Hash(), header.Hash(), i)
-		execResult, kerr := blockchain.ApplyMessage(evm, msg)
+		result, kerr := blockchain.ApplyMessage(evm, msg)
 		if kerr != nil {
 			preRes := PreResult{
-				Error: toPreError(kerr, execResult),
+				Error: toPreError(kerr, result),
 			}
-			if execResult != nil {
-				preRes.GasUsed = execResult.UsedGas
+			if result != nil {
+				preRes.GasUsed = result.UsedGas
 			}
 			preResList = append(preResList, preRes)
 			continue
 		}
+
 		preRes := PreResult{
-			Trace:   tracer.GetTraces(),
-			Logs:    state.GetLogs(msg.Hash()),
-			GasUsed: execResult.UsedGas,
+			Trace: tracer.GetTraces(),
+			Logs:  state.GetLogs(msg.Hash()),
 		}
-		if preRes.Error.Msg == "" && preRes.Trace != nil && len(preRes.Trace) > 0 && (preRes.Trace)[0].Error != "" {
+		if result != nil {
+			preRes.GasUsed = result.UsedGas
+			if result.Failed() {
+				preRes.Error = toPreError(err, result)
+			}
+		}
+
+		if preRes.Error.Msg == "" && kerr != nil {
 			preRes.Error = PreError{
 				Code: Reverted,
-				Msg:  (preRes.Trace)[0].Error,
-			}
-		}
-		if preRes.Error.Code == 0 {
-			gasCap := uint64(0)
-			if rpcGasCap := p.b.RPCGasCap(); rpcGasCap != nil {
-				gasCap = rpcGasCap.Uint64()
-			}
-			usedGas := p.doEstimateGas(ctx, txArgs, header, stateOld, gasCap)
-			if usedGas > 0 {
-				preRes.GasUsed = usedGas
+				Msg:  err.Error(),
 			}
 		}
 		preResList = append(preResList, preRes)
 	}
 	return preResList, nil
-}
-
-func (p *PreExecAPI) doEstimateGas(ctx context.Context, args EthTransactionArgs, header *types.Header, state *state.StateDB, gasCap uint64) uint64 {
-	// Binary search the gas requirement, as it may be higher than the amount used
-	var (
-		lo  uint64 = params.TxGas - 1
-		hi  uint64 = params.UpperGasLimit
-		cap uint64
-	)
-	// Use zero address if sender unspecified.
-	if args.From == nil {
-		args.From = new(common.Address)
-	}
-	// Determine the highest gas limit can be used during the estimation.
-	if args.Gas != nil && uint64(*args.Gas) >= params.TxGas {
-		hi = uint64(*args.Gas)
-	} else {
-		// Ethereum set hi as gas ceiling of the block but,
-		// there is no actual gas limit in Klaytn, so we set it as params.UpperGasLimit.
-		hi = params.UpperGasLimit
-	}
-	// Normalize the max fee per gas the call is willing to spend.
-	var feeCap *big.Int
-	if args.GasPrice != nil && (args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil) {
-		return 0
-	} else if args.GasPrice != nil {
-		feeCap = args.GasPrice.ToInt()
-	} else if args.MaxFeePerGas != nil {
-		feeCap = args.MaxFeePerGas.ToInt()
-	} else {
-		feeCap = common.Big0
-	}
-	if feeCap.BitLen() != 0 {
-		balance := state.GetBalance(*args.From) // from can't be nil
-		available := new(big.Int).Set(balance)
-		if args.Value != nil {
-			if args.Value.ToInt().Cmp(available) >= 0 {
-				return 0
-			}
-			available.Sub(available, args.Value.ToInt())
-		}
-		allowance := new(big.Int).Div(available, feeCap)
-
-		// If the allowance is larger than maximum uint64, skip checking
-		if allowance.IsUint64() && hi > allowance.Uint64() {
-			transfer := args.Value
-			if transfer == nil {
-				transfer = new(hexutil.Big)
-			}
-			hi = allowance.Uint64()
-		}
-	}
-	// Recap the highest gas allowance with specified gascap.
-	if gasCap != 0 && hi > gasCap {
-		hi = gasCap
-	}
-	cap = hi
-	executable := func(gas uint64) (bool, *blockchain.ExecutionResult, error) {
-		args.Gas = (*hexutil.Uint64)(&gas)
-		result, err := p.doCallCopy(ctx, args, header, state, gasCap)
-		if err != nil {
-			if errors.Is(err, blockchain.ErrIntrinsicGas) {
-				// Special case, raise gas limit
-				return false, nil, nil
-			}
-			// Returns error when it is not VM error (less balance or wrong nonce, etc...).
-			return true, nil, err
-		}
-		// If err is vmError, return vmError with returned data
-		return result.Failed(), result, nil
-	}
-	// Execute the binary search and hone in on an executable gas limit
-	for lo+1 < hi {
-		mid := (hi + lo) / 2
-		isExecutable, _, err := executable(mid)
-		if err != nil {
-			return 0
-		}
-
-		if !isExecutable {
-			lo = mid
-		} else {
-			hi = mid
-		}
-	}
-	// Reject the transaction as invalid if it still fails at the highest allowance
-	if hi == cap {
-		isExecutable, result, err := executable(hi)
-		if err != nil {
-			return 0
-		}
-		if !isExecutable {
-			if result != nil && result.VmExecutionStatus != types.ReceiptStatusErrOutOfGas {
-				return 0
-			}
-		}
-	}
-	return hi
-}
-
-func (p *PreExecAPI) doCallCopy(ctx context.Context, args EthTransactionArgs, header *types.Header, state *state.StateDB, globalGasCap uint64) (*blockchain.ExecutionResult, error) {
-	stateNew := state.Copy()
-	// header.BaseFee != nil means magma hardforked
-	var baseFee *big.Int
-	if header.BaseFee != nil {
-		baseFee = header.BaseFee
-	} else {
-		baseFee = new(big.Int).SetUint64(params.ZeroBaseFee)
-	}
-	intrinsicGas, err := types.IntrinsicGas(args.data(), nil, args.To == nil, p.b.ChainConfig().Rules(header.Number))
-	if err != nil {
-		return nil, err
-	}
-	msg, err := args.ToMessage(globalGasCap, baseFee, intrinsicGas)
-	if err != nil {
-		return nil, err
-	}
-	var balanceBaseFee *big.Int
-	if header.BaseFee != nil {
-		balanceBaseFee = new(big.Int).Mul(baseFee, common.Big2)
-	} else {
-		balanceBaseFee = msg.GasPrice()
-	}
-	// Add gas fee to sender for estimating gasLimit/computing cost or calling a function by insufficient balance sender.
-	stateNew.AddBalance(msg.ValidatedSender(), new(big.Int).Mul(new(big.Int).SetUint64(msg.Gas()), balanceBaseFee))
-
-	// The intrinsicGas is checked again later in the blockchain.ApplyMessage function,
-	// but we check in advance here in order to keep StateTransition.TransactionDb method as unchanged as possible
-	// and to clarify error reason correctly to serve eth namespace APIs.
-	// This case is handled by EthDoEstimateGas function.
-	if msg.Gas() < intrinsicGas {
-		return nil, fmt.Errorf("%w: msg.gas %d, want %d", blockchain.ErrIntrinsicGas, msg.Gas(), intrinsicGas)
-	}
-	evm, vmError, err := p.b.GetEVM(ctx, msg, stateNew, header, vm.Config{})
-	if err != nil {
-		return nil, err
-	}
-	if err := vmError(); err != nil {
-		return nil, err
-	}
-
-	// Execute the message.
-	res, err := blockchain.ApplyMessage(evm, msg)
-	if err != nil {
-		return res, fmt.Errorf("err: %w (supplied gas %d)", err, msg.Gas())
-	}
-	return res, nil
 }
