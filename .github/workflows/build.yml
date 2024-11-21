@@ -9,11 +9,14 @@ on:
 env:
   REGISTRY: 294354037686.dkr.ecr.ap-northeast-1.amazonaws.com
   IMAGE: blockchain-klaytn
-  DOCKERFILE: Dockerfile
+  DOCKERFILE: Dockerfile.debank
 
 jobs:
   build-artifacts:
-    runs-on: [self-hosted, general]
+    strategy:
+      matrix:
+        arch: [ amd64, arm64 ]
+    runs-on: [self-hosted, "${{ matrix.arch }}"]
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -22,15 +25,43 @@ jobs:
 
       - name: Set env
         run: |
-          echo "REVISION=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "REVISION=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
           echo "COMMIT=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
           echo "BRANCH=${GITHUB_REF##*/}" >> $GITHUB_ENV
       - name: Build and push image
         run: |
-          DOCKER_BUILDKIT=1 docker build -t ${REGISTRY}/${IMAGE}:${REVISION} -f ${DOCKERFILE} .
-          docker push ${REGISTRY}/${IMAGE}:${REVISION}
-          docker rmi ${REGISTRY}/${IMAGE}:${REVISION}
+          DOCKER_BUILDKIT=1 docker build -t ${REGISTRY}/${IMAGE}:${{ matrix.arch }}-${REVISION} -f ${DOCKERFILE} .
+          docker push ${REGISTRY}/${IMAGE}:${{ matrix.arch }}-${REVISION}
+          docker run --name dryrun --rm ${REGISTRY}/${IMAGE}:${{ matrix.arch }}-${REVISION} ken version
+          docker rmi ${REGISTRY}/${IMAGE}:${{ matrix.arch }}-${REVISION}
+
+      - name: Lark Notification
+        continue-on-error: true
+        run: |
+          notiv3 "Blockchain klaytn latest image pushed 🎉" ${REGISTRY}/${IMAGE}:${{ matrix.arch }}-${REVISION}
+
+  merge-docker-manifest:
+    runs-on: [self-hosted, general]
+    needs: build-artifacts
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set env
+        run: |
+          echo "REVISION=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
+
+      - name: Merge manifest
+        run: |
+          docker pull --platform=linux/amd64 ${REGISTRY}/${IMAGE}:amd64-${REVISION}
+          docker pull --platform=linux/arm64 ${REGISTRY}/${IMAGE}:arm64-${REVISION}
+          docker buildx imagetools create --tag ${REGISTRY}/${IMAGE}:${REVISION} ${REGISTRY}/${IMAGE}:amd64-${REVISION} ${REGISTRY}/${IMAGE}:arm64-${REVISION}
           docker run --name dryrun --rm ${REGISTRY}/${IMAGE}:${REVISION} ken version
+          docker rmi ${REGISTRY}/${IMAGE}:${REVISION}
+          docker rmi ${REGISTRY}/${IMAGE}:amd64-${REVISION}
+          docker rmi ${REGISTRY}/${IMAGE}:arm64-${REVISION}
 
       - name: Lark Notification
         continue-on-error: true

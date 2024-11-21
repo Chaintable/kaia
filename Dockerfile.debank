@@ -1,0 +1,40 @@
+FROM golang:1.22.3-bullseye as builder
+
+ARG ACCESS_TOKEN
+
+SHELL ["/bin/bash", "-c"]
+
+RUN apt-get update -q -y && apt-get upgrade -q -y
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y tzdata
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential ca-certificates curl libjemalloc-dev liblz4-dev libsnappy-dev libzstd-dev libudev-dev git
+RUN git config --global url."https://x-access-token:${ACCESS_TOKEN}@github.com".insteadOf "https://github.com"
+
+RUN apt autoremove && apt autoclean
+
+WORKDIR /kaia
+
+COPY .git /kaia/.git
+
+COPY . .
+
+
+WORKDIR /kaia
+
+COPY go.mod .
+COPY go.sum .
+RUN go mod download
+
+RUN make kcn && \
+    make all -j
+
+FROM ubuntu:23.04
+
+RUN apt-get update && apt-get install -y ca-certificates wget libsnappy-dev libjemalloc-dev
+
+COPY --from=builder /kaia/build/bin/* /klaytn-docker-pkg/bin/
+COPY --from=builder /kaia/build/packaging/linux/bin/* /klaytn-docker-pkg/bin/
+COPY --from=builder /kaia/build/packaging/linux/conf/* /klaytn-docker-pkg/conf/
+
+EXPOSE 8551 8552 32323 61001 32323/udp
+
+ENV PATH=/klaytn-docker-pkg/bin:$PATH
