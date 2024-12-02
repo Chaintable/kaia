@@ -518,6 +518,7 @@ func (kCfg *KaiaConfig) SetKaiaConfig(ctx *cli.Context, stack *node.Node) {
 	setServiceChainSigner(ctx, ks, cfg)
 	setRewardbase(ctx, ks, cfg)
 	setTxPool(ctx, &cfg.TxPool)
+	setStateDiffDir(ctx, cfg)
 
 	if ctx.IsSet(SyncModeFlag.Name) {
 		cfg.SyncMode = *GlobalTextMarshaler(ctx, SyncModeFlag.Name).(*downloader.SyncMode)
@@ -826,6 +827,12 @@ func setTxPool(ctx *cli.Context, cfg *blockchain.TxPoolConfig) {
 	// PN specific txpool setting
 	if NodeTypeFlag.Value == "pn" {
 		cfg.EnableSpamThrottlerAtRuntime = !ctx.Bool(TxPoolSpamThrottlerDisableFlag.Name)
+	}
+}
+
+func setStateDiffDir(ctx *cli.Context, cfg *cn.Config) {
+	if ctx.IsSet(StateDiffDirFlag.Name) {
+		cfg.StateDiffDir = ctx.String(StateDiffDirFlag.Name)
 	}
 }
 

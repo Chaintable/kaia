@@ -90,6 +90,7 @@ func (p *PreExecAPI) TraceMany(ctx context.Context, origins []PreExecTx) ([]PreR
 	if state == nil || err != nil {
 		return nil, err
 	}
+	defer state.Close()
 	for i := 0; i < len(origins); i++ {
 		origin := origins[i]
 		if origin.From == nil {

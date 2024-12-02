@@ -46,13 +46,13 @@ import (
 // It creates a default node based on the command line arguments and runs it in
 // blocking mode, waiting for it to be shut down.
 func RunKaiaNode(ctx *cli.Context) error {
-	fullNode := MakeFullNode(ctx)
+	fullNode, _ := MakeFullNode(ctx)
 	startNode(ctx, fullNode)
 	fullNode.Wait()
 	return nil
 }
 
-func MakeFullNode(ctx *cli.Context) *node.Node {
+func MakeFullNode(ctx *cli.Context) (*node.Node, utils.KaiaConfig) {
 	stack, cfg := utils.MakeConfigNode(ctx)
 
 	if utils.NetworkTypeFlag.Value == utils.SCNNetworkType && cfg.ServiceChain.EnabledSubBridge {
@@ -73,7 +73,7 @@ func MakeFullNode(ctx *cli.Context) *node.Node {
 	utils.RegisterService(stack, &cfg.ServiceChain)
 	utils.RegisterDBSyncerService(stack, &cfg.DB)
 	utils.RegisterChainDataFetcherService(stack, &cfg.ChainDataFetcher)
-	return stack
+	return stack, cfg
 }
 
 // startNode boots up the system node and all registered protocols, after which

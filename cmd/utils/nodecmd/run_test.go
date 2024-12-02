@@ -200,7 +200,7 @@ func waitForEndpoint(t *testing.T, endpoint string, timeout time.Duration) {
 }
 
 func RunTestKaiaNode(ctx *cli.Context) error {
-	fullNode := MakeFullNode(ctx)
+	fullNode, _ := MakeFullNode(ctx)
 	fullNode.Wait()
 	return nil
 }

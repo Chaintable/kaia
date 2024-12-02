@@ -48,6 +48,7 @@ import (
 	"github.com/kaiachain/kaia/consensus"
 	"github.com/kaiachain/kaia/crypto"
 	"github.com/kaiachain/kaia/event"
+	"github.com/kaiachain/kaia/flat-state-history/flatdb"
 	"github.com/kaiachain/kaia/fork"
 	"github.com/kaiachain/kaia/log"
 	kaiametrics "github.com/kaiachain/kaia/metrics"
@@ -746,6 +747,10 @@ func (bc *BlockChain) StateAt(root common.Hash) (*state.StateDB, error) {
 	return state.New(root, bc.stateCache, bc.snaps, nil)
 }
 
+func (bc *BlockChain) StateAtUseFlat(root common.Hash, blockNumber uint64) (*state.StateDB, error) {
+	return state.NewWithFlatDB(root, bc.stateCache, blockNumber, nil)
+}
+
 // PrunableStateAt returns a new mutable state based on a particular point in time.
 // If live pruning is enabled on the databse, and num is nonzero, then trie will mark obsolete nodes for pruning.
 func (bc *BlockChain) PrunableStateAt(root common.Hash, num uint64) (*state.StateDB, error) {
@@ -1132,6 +1137,10 @@ func (bc *BlockChain) Stop() {
 		vm.PrintOpCodeExecTime()
 	}
 
+	if err := flatdb.BeforeClose(); err != nil {
+		logger.Error("Failed to close flat database", "err", err)
+	}
+
 	logger.Info("Blockchain manager stopped")
 }
 
@@ -1367,6 +1376,7 @@ func (bc *BlockChain) writeStateTrie(block *types.Block, state *state.StateDB) e
 	state.LockGCCachedNode()
 	defer state.UnlockGCCachedNode()
 
+	state.SetBlockNumber(block.NumberU64())
 	root, err := state.Commit(true)
 	if err != nil {
 		return err

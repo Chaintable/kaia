@@ -351,6 +351,7 @@ func (g *Genesis) ToBlock(baseStateRoot common.Hash, db database.DBManager) *typ
 		head.MixHash = params.ZeroMixHash
 	}
 
+	stateDB.SetBlockNumber(g.Number)
 	stateDB.Commit(false)
 	stateDB.Database().TrieDB().Commit(root, true, g.Number)
 

@@ -144,7 +144,7 @@ func parseRoot(input string) (common.Hash, error) {
 // verifyState verifies if the stored snapshot data is correct or not.
 // if a root hash isn't given, the root hash of current block is investigated.
 func verifyState(ctx *cli.Context) error {
-	stack := MakeFullNode(ctx)
+	stack, _ := MakeFullNode(ctx)
 	db := stack.OpenDatabase(getConfig(ctx))
 	head := db.ReadHeadBlockHash()
 	if head == (common.Hash{}) {
@@ -185,7 +185,7 @@ func verifyState(ctx *cli.Context) error {
 func traceTrie(ctx *cli.Context) error {
 	var childWait, logWait sync.WaitGroup
 
-	stack := MakeFullNode(ctx)
+	stack, _ := MakeFullNode(ctx)
 	dbm := stack.OpenDatabase(getConfig(ctx))
 	head := dbm.ReadHeadBlockHash()
 	if head == (common.Hash{}) {
@@ -290,7 +290,7 @@ func doTraceTrie(db state.Database, root common.Hash) (resultErr error) {
 }
 
 func iterateTrie(ctx *cli.Context) error {
-	stack := MakeFullNode(ctx)
+	stack, _ := MakeFullNode(ctx)
 	dbm := stack.OpenDatabase(getConfig(ctx))
 	sdb, err := state.New(common.Hash{}, state.NewDatabase(dbm), nil, nil)
 	if err != nil {

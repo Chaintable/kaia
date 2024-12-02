@@ -119,6 +119,7 @@ func (s *PublicTransactionPoolAPI) GetTransactionCount(ctx context.Context, addr
 	if err != nil {
 		return nil, err
 	}
+	defer state.Close()
 	nonce := state.GetNonce(address)
 	return (*hexutil.Uint64)(&nonce), state.Error()
 }
@@ -588,6 +589,7 @@ func (s *PublicTransactionPoolAPI) RecoverFromTransaction(ctx context.Context, e
 	if err != nil {
 		return common.Address{}, err
 	}
+	defer state.Close()
 	_, err = tx.ValidateSender(signer, state, bn)
 	if err != nil {
 		return common.Address{}, err
@@ -616,6 +618,7 @@ func (s *PublicTransactionPoolAPI) RecoverFromMessage(
 	if err != nil {
 		return common.Address{}, err
 	}
+	defer state.Close()
 	key := state.GetKey(address)
 
 	// We cannot identify if the signature has signed with EIP-191 or KIP-97 prefix without the signer's address.

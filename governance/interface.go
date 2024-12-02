@@ -123,6 +123,7 @@ type blockChain interface {
 	GetReceiptsByBlockHash(blockHash common.Hash) types.Receipts
 	State() (*state.StateDB, error)
 	StateAt(root common.Hash) (*state.StateDB, error)
+	StateAtUseFlat(root common.Hash, blockNumber uint64) (*state.StateDB, error)
 
 	CurrentBlock() *types.Block
 }

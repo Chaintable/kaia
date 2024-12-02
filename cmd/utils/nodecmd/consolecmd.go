@@ -68,7 +68,7 @@ See https://github.com/ethereum/go-ethereum/wiki/JavaScript-Console.`,
 // same time.
 func localConsole(ctx *cli.Context) error {
 	// Create and start the node based on the CLI flags
-	node := MakeFullNode(ctx)
+	node, _ := MakeFullNode(ctx)
 	startNode(ctx, node)
 	defer node.Stop()
 

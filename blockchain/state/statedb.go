@@ -23,17 +23,21 @@
 package state
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	"sort"
 	"sync/atomic"
 	"time"
 
+	"github.com/holiman/uint256"
 	"github.com/kaiachain/kaia/blockchain/types"
 	"github.com/kaiachain/kaia/blockchain/types/account"
 	"github.com/kaiachain/kaia/blockchain/types/accountkey"
 	"github.com/kaiachain/kaia/common"
 	"github.com/kaiachain/kaia/crypto"
+	"github.com/kaiachain/kaia/flat-state-history/flatdb"
+	"github.com/kaiachain/kaia/flat-state-history/traits"
 	"github.com/kaiachain/kaia/log"
 	"github.com/kaiachain/kaia/params"
 	"github.com/kaiachain/kaia/rlp"
@@ -120,6 +124,14 @@ type StateDB struct {
 	SnapshotAccountReads time.Duration
 	SnapshotStorageReads time.Duration
 	SnapshotCommits      time.Duration
+
+	// flatdb
+	blockNumber  uint64
+	flatDBReader traits.FlatStateReader
+	originalRoot common.Hash // The pre-state root, before any changes were made
+	Destructs    map[common.Hash]struct{}
+	Accounts     map[common.Hash]traits.NewAccount
+	Storage      map[common.Hash]traits.AccountStorageDiff
 }
 
 // Create a new state from a given trie.
@@ -141,6 +153,10 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree, opts *statedb.Trie
 		accessList:               newAccessList(),
 		transientStorage:         newTransientStorage(),
 		journal:                  newJournal(),
+		originalRoot:             root,
+		Destructs:                make(map[common.Hash]struct{}),
+		Accounts:                 make(map[common.Hash]traits.NewAccount),
+		Storage:                  make(map[common.Hash]traits.AccountStorageDiff),
 	}
 	if sdb.snaps != nil {
 		if sdb.snap = sdb.snaps.Snapshot(root); sdb.snap != nil {
@@ -600,6 +616,18 @@ func (s *StateDB) updateStateObject(stateObject *stateObject) {
 	if s.snap != nil {
 		s.snapAccounts[stateObject.addrHash] = snapshotData
 	}
+
+	Balance, _ := uint256.FromBig(stateObject.account.GetBalance())
+	//Balance, _ := uint256.FromBig(stateObject.account.GetBalance())
+	if data, ok := stateObject.account.(*account.LegacyAccount); ok {
+		s.Accounts[stateObject.addrHash] = traits.NewAccount{
+			Address:  common.BytesToHash(stateObject.addrHash.Bytes()),
+			Balance:  Balance.ToBig(),
+			Nonce:    stateObject.account.GetNonce(),
+			CodeHash: common.BytesToHash(data.CodeHash),
+			Root:     data.Root,
+		}
+	}
 }
 
 // deleteStateObject removes the given object from the state trie.
@@ -647,8 +675,29 @@ func (s *StateDB) getDeletedStateObject(addr common.Address) *stateObject {
 			}
 		}
 	}
+
+	if s.flatDBReader != nil {
+		flatAccount, err := s.flatDBReader.Account(crypto.Keccak256Hash(addr.Bytes()))
+		if err == nil || flatAccount == nil {
+			return nil
+		}
+
+		data := &account.LegacyAccount{
+			Nonce:    flatAccount.Nonce,
+			Balance:  (flatAccount.Balance),
+			CodeHash: flatAccount.CodeHash.Bytes(),
+			Root:     flatAccount.Root,
+		}
+		if len(data.CodeHash) == 0 {
+			data.CodeHash = emptyCodeHash
+		}
+		if data.Root == (common.Hash{}) {
+			data.Root = traits.EmptyRootHash
+		}
+		acc = data
+	}
 	// If snapshot unavailable or reading from it failed, load from the database
-	if s.snap == nil || err != nil {
+	if acc == nil || err != nil {
 		// Track the amount of time wasted on loading the object from the database
 		if EnabledExpensive {
 			defer func(start time.Time) { s.AccountReads += time.Since(start) }(time.Now())
@@ -710,6 +759,12 @@ func (s *StateDB) createObject(addr common.Address) (newobj, prev *stateObject) 
 		_, prevdestruct = s.snapDestructs[prev.addrHash]
 		if !prevdestruct {
 			s.snapDestructs[prev.addrHash] = struct{}{}
+		}
+	}
+	if prev != nil {
+		_, prevdestruct = s.Destructs[prev.addrHash]
+		if !prevdestruct {
+			s.Destructs[prev.addrHash] = struct{}{}
 		}
 	}
 	acc, err := account.NewAccountWithType(account.ExternallyOwnedAccountType)
@@ -838,7 +893,7 @@ func (s *StateDB) Copy() *StateDB {
 	// Copy all the basic fields, initialize the memory ones
 	state := &StateDB{
 		db:                s.db,
-		trie:              s.db.CopyTrie(s.trie),
+		originalRoot:      s.originalRoot,
 		stateObjects:      make(map[common.Address]*stateObject, len(s.journal.dirties)),
 		stateObjectsDirty: make(map[common.Address]struct{}, len(s.journal.dirties)),
 		refund:            s.refund,
@@ -847,6 +902,13 @@ func (s *StateDB) Copy() *StateDB {
 		preimages:         make(map[common.Hash][]byte),
 		journal:           newJournal(),
 	}
+	if s.trie != nil {
+		state.trie = s.db.CopyTrie(s.trie)
+	}
+	if s.flatDBReader != nil {
+		state.flatDBReader = s.flatDBReader.Copy()
+	}
+
 	// Copy the dirty states, logs, and preimages
 	for addr := range s.journal.dirties {
 		// As documented [here](https://github.com/ethereum/go-ethereum/pull/16485#issuecomment-380438527),
@@ -905,6 +967,19 @@ func (s *StateDB) Copy() *StateDB {
 			}
 			state.snapStorage[k] = temp
 		}
+	}
+
+	state.Destructs = make(map[common.Hash]struct{})
+	for k, v := range s.Destructs {
+		state.Destructs[k] = v
+	}
+	state.Accounts = make(map[common.Hash]traits.NewAccount)
+	for k, v := range s.Accounts {
+		state.Accounts[k] = v
+	}
+	state.Storage = make(map[common.Hash]traits.AccountStorageDiff)
+	for k, v := range s.Storage {
+		state.Storage[k] = v
 	}
 	return state
 }
@@ -977,6 +1052,9 @@ func (stateDB *StateDB) Finalise(deleteEmptyObjects bool, setStorageRoot bool) {
 				delete(stateDB.snapAccounts, so.addrHash)       // Clear out any previously updated account data (may be recreated via a ressurrect)
 				delete(stateDB.snapStorage, so.addrHash)        // Clear out any previously updated storage data (may be recreated via a ressurrect)
 			}
+			stateDB.Destructs[so.addrHash] = struct{}{}
+			delete(stateDB.Accounts, so.addrHash)
+			delete(stateDB.Storage, so.addrHash)
 		} else {
 			so.updateStorageTrie(stateDB.db)
 			so.setStorageRoot(setStorageRoot, stateDB.stateObjectsDirtyStorage)
@@ -1111,6 +1189,14 @@ func (s *StateDB) Commit(deleteEmptyObjects bool) (root common.Hash, err error) 
 		s.snap, s.snapDestructs, s.snapAccounts, s.snapStorage = nil, nil, nil, nil
 	}
 
+	if flatdb.GetWriter() != nil {
+		stateDiff := s.GetStateDiff(root)
+		err := flatdb.GetWriter().WriteStateDiff(s.blockNumber, stateDiff)
+		if err != nil {
+			logger.Crit("Failed to write state diff", "err", err)
+		}
+	}
+
 	return root, err
 }
 
@@ -1218,4 +1304,86 @@ func (s *StateDB) AddressInAccessList(addr common.Address) bool {
 // SlotInAccessList returns true if the given (address, slot)-tuple is in the access list.
 func (s *StateDB) SlotInAccessList(addr common.Address, slot common.Hash) (addressPresent bool, slotPresent bool) {
 	return s.accessList.Contains(addr, slot)
+}
+
+func NewWithFlatDB(root common.Hash, db Database, blockNumber uint64, opts *statedb.TrieOpts) (*StateDB, error) {
+	historyReader := flatdb.GetReader()
+	if historyReader == nil {
+		return nil, errors.New("flatdb reader not initialized")
+	}
+	reader, r, err := historyReader.GetStateReader(blockNumber)
+	if err != nil {
+		reader.Close()
+		return nil, err
+	}
+	if r != root {
+		reader.Close()
+		return nil, fmt.Errorf("root mismatch, expected %v, got %v", r, root)
+	}
+	tr, _ := db.OpenTrie(root, opts)
+
+	sdb := &StateDB{
+		db:                       db,
+		trie:                     tr,
+		trieOpts:                 opts,
+		stateObjects:             make(map[common.Address]*stateObject),
+		stateObjectsDirtyStorage: make(map[common.Address]struct{}),
+		stateObjectsDirty:        make(map[common.Address]struct{}),
+		logs:                     make(map[common.Hash][]*types.Log),
+		preimages:                make(map[common.Hash][]byte),
+		accessList:               newAccessList(),
+		transientStorage:         newTransientStorage(),
+		journal:                  newJournal(),
+		flatDBReader:             reader,
+		originalRoot:             root,
+		Destructs:                make(map[common.Hash]struct{}),
+		Accounts:                 make(map[common.Hash]traits.NewAccount),
+		Storage:                  make(map[common.Hash]traits.AccountStorageDiff),
+	}
+	if opts != nil && opts.Prefetching {
+		sdb.prefetching = true
+	}
+	return sdb, nil
+}
+
+func (s *StateDB) Close() {
+	if s == nil {
+		return
+	}
+	if s.flatDBReader != nil {
+		s.flatDBReader.Close()
+	}
+}
+
+func (s *StateDB) GetStateDiff(rootHash common.Hash) *traits.BlockStorageDiff {
+	DeletedAccounts := make([]common.Hash, 0, len(s.Destructs))
+	for k := range s.Destructs {
+		DeletedAccounts = append(DeletedAccounts, k)
+	}
+	NewAccounts := make([]traits.NewAccount, 0, len(s.Accounts))
+	for _, v := range s.Accounts {
+		NewAccounts = append(NewAccounts, v)
+	}
+	StorageDiff := make([]traits.AccountStorageDiff, 0, len(s.Storage))
+	for _, storage := range s.Storage {
+		StorageDiff = append(StorageDiff, storage)
+	}
+	if rootHash == (common.Hash{}) {
+		rootHash = traits.EmptyRootHash
+	}
+	parentRootHash := s.originalRoot
+	if parentRootHash == (common.Hash{}) {
+		parentRootHash = traits.EmptyRootHash
+	}
+	return &traits.BlockStorageDiff{
+		Hash:            rootHash,
+		ParentHash:      parentRootHash,
+		DeletedAccounts: DeletedAccounts,
+		NewAccounts:     NewAccounts,
+		StorageDiff:     StorageDiff,
+	}
+}
+
+func (s *StateDB) SetBlockNumber(block uint64) {
+	s.blockNumber = block
 }
