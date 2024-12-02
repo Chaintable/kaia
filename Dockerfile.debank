@@ -1,4 +1,4 @@
-FROM golang:1.22.3-bullseye as builder
+FROM golang:1.22.5-bullseye as builder
 
 ARG ACCESS_TOKEN
 
@@ -27,7 +27,7 @@ RUN go mod download
 RUN make kcn && \
     make all -j
 
-FROM ubuntu:23.04
+FROM ubuntu:24.04
 
 RUN apt-get update && apt-get install -y ca-certificates wget libsnappy-dev libjemalloc-dev
 
