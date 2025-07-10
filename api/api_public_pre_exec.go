@@ -132,7 +132,7 @@ func (p *PreExecAPI) TraceMany(ctx context.Context, origins []PreExecTx) ([]PreR
 		} else {
 			baseFee = new(big.Int).SetUint64(params.ZeroBaseFee)
 		}
-		intrinsicGas, err := types.IntrinsicGas(txArgs.data(), nil, txArgs.To == nil, p.b.ChainConfig().Rules(header.Number))
+		intrinsicGas, err := types.IntrinsicGas(txArgs.data(), nil, nil, txArgs.To == nil, p.b.ChainConfig().Rules(header.Number))
 		if err != nil {
 			if err != nil {
 				preResList = append(preResList, PreResult{

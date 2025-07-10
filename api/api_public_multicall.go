@@ -153,7 +153,7 @@ func handleNative(ctx context.Context, b Backend, arg EthTransactionArgs, blockN
 	} else {
 		baseFee = new(big.Int).SetUint64(params.ZeroBaseFee)
 	}
-	intrinsicGas, err := types.IntrinsicGas(arg.data(), nil, arg.To == nil, b.ChainConfig().Rules(header.Number))
+	intrinsicGas, err := types.IntrinsicGas(arg.data(), nil, nil, arg.To == nil, b.ChainConfig().Rules(header.Number))
 	if err != nil {
 		return nil, err
 	}

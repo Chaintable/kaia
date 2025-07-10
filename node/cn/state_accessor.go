@@ -201,7 +201,7 @@ func (cn *CN) stateAtBlock(block *types.Block, reexec uint64, base *state.StateD
 }
 
 // stateAtTransaction returns the execution environment of a certain transaction.
-func (cn *CN) stateAtTransaction(block *types.Block, txIndex int, reexec uint64, base *state.StateDB, readOnly bool, preferDisk bool) (blockchain.Message, vm.BlockContext, vm.TxContext, *state.StateDB, tracers.StateReleaseFunc, tracers.StateReleaseFunc, error) {
+func (cn *CN) stateAtTransaction(block *types.Block, txIndex int, reexec uint64, base *state.StateDB, readOnly bool, preferDisk bool) (blockchain.Message, vm.BlockContext, vm.TxContext, *state.StateDB, tracers.StateReleaseFunc, error) {
 	// Short circuit if it's genesis block.
 	if block.NumberU64() == 0 {
 		return nil, vm.BlockContext{}, vm.TxContext{}, nil, nil, errors.New("no transaction in genesis")
