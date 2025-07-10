@@ -100,11 +100,12 @@ func TestMigration_StartMigrationByMiscDB(t *testing.T) {
 		err := cn.ChainDB().GetMiscDB().Put(stateTriePathKey, []byte(newDBPath))
 		assert.NoError(t, err)
 
-		// an error expected on node start
+		// no error expected on node start, even if the state trie db has no data
 		stopNode(t, fullNode)
-		_, _, err = newKaiaNode(t, workspace, validator, nil, nil)
-		assert.Error(t, err, "start failure expected, changed state trie db has no data") // error expected
+		fullNode, _ = startNode(t, workspace, validator)
 	}
+
+	stopNode(t, fullNode)
 }
 
 func writeRandomValueToStateTrieDB(t *testing.T, dbm database.DBManager) map[string]string {
@@ -181,6 +182,38 @@ func TestMigration_StartMigrationByMiscDBOnRestart(t *testing.T) {
 	dir, err := miscDB.Get(newPathKey)
 	assert.NoError(t, err)
 	assert.NotEqual(t, "statetrie", string(dir), "migration failed")
+
+	stopNode(t, fullNode)
+}
+
+// if old db path is set on miscDB and a node is restarted, old db should be removed
+func TestMigration_RemoveOldDBOnRestart(t *testing.T) {
+	log.EnableLogForTest(log.LvlCrit, log.LvlTrace)
+
+	fullNode, node, validator, _, workspace, _, _, _ := newSimpleBlockchain(t, 1)
+	defer os.RemoveAll(workspace)
+	miscDB := node.ChainDB().GetMiscDB()
+
+	// set old db path in miscDB
+	d, err := os.MkdirTemp("", "test_old_db_path")
+	assert.NoError(t, err)
+
+	testOldDBPath := []byte(d)
+	migrationOldDBPathKey := []byte("migrationOldDBPath")
+	err = miscDB.Put(migrationOldDBPathKey, testOldDBPath)
+	assert.NoError(t, err)
+
+	fullNode, node = restartNode(t, fullNode, node, workspace, validator)
+	miscDB = node.ChainDB().GetMiscDB()
+
+	time.Sleep(1 * time.Second)
+
+	dir, err := miscDB.Get(migrationOldDBPathKey)
+	assert.NoError(t, err)
+	assert.Equal(t, "", string(dir))
+
+	_, err = os.Stat(d)
+	assert.True(t, os.IsNotExist(err))
 
 	stopNode(t, fullNode)
 }

@@ -23,7 +23,9 @@
 package work
 
 import (
+	"math"
 	"math/big"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -36,9 +38,13 @@ import (
 	"github.com/kaiachain/kaia/consensus"
 	"github.com/kaiachain/kaia/consensus/misc"
 	"github.com/kaiachain/kaia/event"
+	"github.com/kaiachain/kaia/kaiax"
+	"github.com/kaiachain/kaia/kaiax/builder"
+	builder_impl "github.com/kaiachain/kaia/kaiax/builder/impl"
+	"github.com/kaiachain/kaia/kaiax/gov"
+	"github.com/kaiachain/kaia/kerrors"
 	kaiametrics "github.com/kaiachain/kaia/metrics"
 	"github.com/kaiachain/kaia/params"
-	"github.com/kaiachain/kaia/reward"
 	"github.com/kaiachain/kaia/storage/database"
 	"github.com/rcrowley/go-metrics"
 )
@@ -71,6 +77,7 @@ var (
 	nonceTooHighTxsGauge    = metrics.NewRegisteredGauge("miner/nonce/high/txs", nil)
 	gasLimitReachedTxsGauge = metrics.NewRegisteredGauge("miner/limitreached/gas/txs", nil)
 	strangeErrorTxsCounter  = metrics.NewRegisteredCounter("miner/strangeerror/txs", nil)
+	minerBalanceGauge       = metrics.NewRegisteredGauge("miner/balance", nil)
 
 	blockBaseFee              = metrics.NewRegisteredGauge("miner/block/mining/basefee", nil)
 	blockMiningTimer          = kaiametrics.NewRegisteredHybridTimer("miner/block/mining/time", nil)
@@ -91,7 +98,6 @@ var (
 	snapshotAccountReadTimer = metrics.NewRegisteredTimer("miner/snapshot/account/reads", nil)
 	snapshotStorageReadTimer = metrics.NewRegisteredTimer("miner/snapshot/storage/reads", nil)
 	snapshotCommitTimer      = metrics.NewRegisteredTimer("miner/snapshot/commits", nil)
-	calcDeferredRewardTimer  = metrics.NewRegisteredTimer("reward/distribute/calcdeferredreward", nil)
 )
 
 // Agent can register themself with the worker
@@ -147,20 +153,25 @@ type worker struct {
 	agents map[Agent]struct{}
 	recv   chan *Result
 
-	backend Backend
-	chain   BlockChain
-	proc    blockchain.Validator
-	chainDB database.DBManager
+	backend           Backend
+	chain             BlockChain
+	proc              blockchain.Validator
+	chainDB           database.DBManager
+	govModule         gov.GovModule
+	builderModule     builder.BuilderModule
+	executionModules  []kaiax.ExecutionModule
+	txBundlingModules []builder.TxBundlingModule
 
 	extra []byte
 
-	currentMu  sync.Mutex
-	current    *Task
-	rewardbase common.Address
+	currentMu sync.Mutex
+	current   *Task
+	nodeAddr  common.Address
 
-	snapshotMu    sync.RWMutex
-	snapshotBlock *types.Block
-	snapshotState *state.StateDB
+	snapshotMu       sync.RWMutex // The lock used to protect the block snapshot and state snapshot
+	snapshotBlock    *types.Block
+	snapshotReceipts types.Receipts
+	snapshotState    *state.StateDB
 
 	// atomic status counters
 	mining int32
@@ -169,7 +180,7 @@ type worker struct {
 	nodetype common.ConnType
 }
 
-func newWorker(config *params.ChainConfig, engine consensus.Engine, rewardbase common.Address, backend Backend, mux *event.TypeMux, nodetype common.ConnType, TxResendUseLegacy bool) *worker {
+func newWorker(config *params.ChainConfig, engine consensus.Engine, nodeAddr common.Address, backend Backend, mux *event.TypeMux, nodetype common.ConnType, TxResendUseLegacy bool, govModule gov.GovModule) *worker {
 	worker := &worker{
 		config:      config,
 		engine:      engine,
@@ -184,7 +195,8 @@ func newWorker(config *params.ChainConfig, engine consensus.Engine, rewardbase c
 		proc:        backend.BlockChain().Validator(),
 		agents:      make(map[Agent]struct{}),
 		nodetype:    nodetype,
-		rewardbase:  rewardbase,
+		nodeAddr:    nodeAddr,
+		govModule:   govModule,
 	}
 
 	// Subscribe NewTxsEvent for tx pool
@@ -204,22 +216,22 @@ func (self *worker) setExtra(extra []byte) {
 	self.extra = extra
 }
 
-func (self *worker) pending() (*types.Block, *state.StateDB) {
+func (self *worker) pending() (*types.Block, types.Receipts, *state.StateDB) {
 	if atomic.LoadInt32(&self.mining) == 0 {
 		// return a snapshot to avoid contention on currentMu mutex
 		self.snapshotMu.RLock()
 		defer self.snapshotMu.RUnlock()
 		if self.snapshotState == nil {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return self.snapshotBlock, self.snapshotState.Copy()
+		return self.snapshotBlock, self.snapshotReceipts, self.snapshotState.Copy()
 	}
 
 	self.currentMu.Lock()
 	defer self.currentMu.Unlock()
 	self.current.stateMu.Lock()
 	defer self.current.stateMu.Unlock()
-	return self.current.Block, self.current.state.Copy()
+	return self.current.Block, self.current.receipts, self.current.state.Copy()
 }
 
 func (self *worker) pendingBlock() *types.Block {
@@ -440,15 +452,10 @@ func (self *worker) wait(TxResendUseLegacy bool) {
 				events = append(events, blockchain.ChainHeadEvent{Block: block})
 			}
 
-			// update governance CurrentSet if it is at an epoch block
-			if err := self.engine.CreateSnapshot(self.chain, block.NumberU64(), block.Hash(), nil); err != nil {
-				logger.Error("Failed to call snapshot", "err", err)
-			}
-
-			// update governance parameters
-			if istanbul, ok := self.engine.(consensus.Istanbul); ok {
-				if err := istanbul.UpdateParam(block.NumberU64()); err != nil {
-					logger.Error("Failed to update governance parameters", "err", err)
+			// Invoke ExecutionModules after executing a block.
+			for _, module := range self.executionModules {
+				if err := module.PostInsertBlock(block); err != nil {
+					logger.Error("Failed to call PostInsertBlock", "err", err)
 				}
 			}
 
@@ -480,7 +487,7 @@ func (self *worker) push(work *Task) {
 
 // makeCurrent creates a new environment for the current cycle.
 func (self *worker) makeCurrent(parent *types.Block, header *types.Header) error {
-	stateDB, err := self.chain.PrunableStateAt(parent.Root(), parent.NumberU64())
+	stateDB, err := self.chain.StateAt(parent.Root())
 	if err != nil {
 		return err
 	}
@@ -544,7 +551,8 @@ func (self *worker) commitNewWork() {
 		if self.config.IsMagmaForkEnabled(nextBlockNum) {
 			// NOTE-Kaia NextBlockBaseFee needs the header of parent, self.chain.CurrentBlock
 			// So above code, TxPool().Pending(), is separated with this and can be refactored later.
-			nextBaseFee = misc.NextMagmaBlockBaseFee(parent.Header(), self.config.Governance.KIP71)
+			pset := self.govModule.GetParamSet(nextBlockNum.Uint64())
+			nextBaseFee = misc.NextMagmaBlockBaseFee(parent.Header(), pset.ToKip71Config())
 			pending = types.FilterTransactionWithBaseFee(pending, nextBaseFee)
 		}
 	}
@@ -573,11 +581,17 @@ func (self *worker) commitNewWork() {
 	self.current.stateMu.Lock()
 	defer self.current.stateMu.Unlock()
 
+	self.engine.Initialize(self.chain, header, self.current.state)
+
 	// Create the current work task
 	work := self.current
 	if self.nodetype == common.CONSENSUSNODE {
+		// measure miner balance before executing txs
+		minerBalanceGauge.Update(getBalanceForGauge(work.state, self.nodeAddr))
+
+		// Sort txs then execute them
 		txs := types.NewTransactionsByPriceAndNonce(self.current.signer, pending, work.header.BaseFee)
-		work.commitTransactions(self.mux, txs, self.chain, self.rewardbase)
+		work.commitTransactions(self.mux, txs, self.chain, self.nodeAddr, self.txBundlingModules)
 		finishedCommitTx := time.Now()
 
 		// Create the new block to seal with the consensus engine
@@ -603,8 +617,6 @@ func (self *worker) commitNewWork() {
 			snapshotAccountReadTimer.Update(work.state.SnapshotAccountReads)
 			snapshotStorageReadTimer.Update(work.state.SnapshotStorageReads)
 			snapshotCommitTimer.Update(work.state.SnapshotCommits)
-
-			calcDeferredRewardTimer.Update(reward.CalcDeferredRewardTimer)
 
 			trieAccess := work.state.AccountReads + work.state.AccountHashes + work.state.AccountUpdates + work.state.AccountCommits
 			trieAccess += work.state.StorageReads + work.state.StorageHashes + work.state.StorageUpdates + work.state.StorageCommits
@@ -641,11 +653,30 @@ func (self *worker) updateSnapshot() {
 		self.current.txs,
 		self.current.receipts,
 	)
+	self.snapshotReceipts = self.current.receipts
 	self.snapshotState = self.current.state.Copy()
 }
 
-func (env *Task) commitTransactions(mux *event.TypeMux, txs *types.TransactionsByPriceAndNonce, bc BlockChain, rewardbase common.Address) {
-	coalescedLogs := env.ApplyTransactions(txs, bc, rewardbase)
+func (self *worker) RegisterExecutionModule(modules ...kaiax.ExecutionModule) {
+	self.executionModules = append(self.executionModules, modules...)
+}
+
+func (self *worker) RegisterTxBundlingModule(modules ...builder.TxBundlingModule) {
+	self.txBundlingModules = append(self.txBundlingModules, modules...)
+}
+
+// Return the balance of the address in KAIA, in int64. If the balance is greater (often happens in private net), return MaxInt64.
+func getBalanceForGauge(state *state.StateDB, nodeAddr common.Address) int64 {
+	balance := new(big.Int).Div(state.GetBalance(nodeAddr), big.NewInt(params.KAIA))
+	if balance.IsInt64() {
+		return balance.Int64()
+	} else {
+		return math.MaxInt64
+	}
+}
+
+func (env *Task) commitTransactions(mux *event.TypeMux, txs *types.TransactionsByPriceAndNonce, bc BlockChain, nodeAddr common.Address, txBundlingModules []builder.TxBundlingModule) {
+	coalescedLogs := env.ApplyTransactions(txs, bc, nodeAddr, txBundlingModules)
 
 	if len(coalescedLogs) > 0 || env.tcount > 0 {
 		// make a copy, the state caches the logs and these logs get "upgraded" from pending to mined
@@ -667,12 +698,15 @@ func (env *Task) commitTransactions(mux *event.TypeMux, txs *types.TransactionsB
 	}
 }
 
-func (env *Task) ApplyTransactions(txs *types.TransactionsByPriceAndNonce, bc BlockChain, rewardbase common.Address) []*types.Log {
+func (env *Task) ApplyTransactions(txs *types.TransactionsByPriceAndNonce, bc BlockChain, nodeAddr common.Address, txBundlingModules []builder.TxBundlingModule) []*types.Log {
+	arrayTxs := builder_impl.Arrayify(txs)
+	incorporatedTxs, bundles := builder_impl.ExtractBundlesAndIncorporate(arrayTxs, txBundlingModules)
 	var coalescedLogs []*types.Log
 
 	// Limit the execution time of all transactions in a block
-	var abort int32 = 0       // To break the below commitTransaction for loop when timed out
-	chDone := make(chan bool) // To stop the goroutine below when processing txs is completed
+	var abort int32 = 0            // To break the below commitTransaction for loop when timed out
+	var isExecutingBundleTxs int32 // To wait for abort while the bundle is running
+	chDone := make(chan bool)      // To stop the goroutine below when processing txs is completed
 
 	// chEVM is used to notify the below goroutine of the running EVM so it can call evm.Cancel
 	// when timed out.  We use a buffered channel to prevent the main EVM execution routine
@@ -699,7 +733,8 @@ func (env *Task) ApplyTransactions(txs *types.TransactionsByPriceAndNonce, bc Bl
 
 			if timeout && evm != nil {
 				// Allow the first transaction to complete although it exceeds the time limit.
-				if env.tcount > 0 {
+				// Even in this case, the evm will not be canceled if the bundle is running.
+				if env.tcount > 0 && atomic.LoadInt32(&isExecutingBundleTxs) == 0 {
 					// The total time limit reached, thus we stop the currently running EVM.
 					evm.Cancel(vm.CancelByTotalTimeLimit)
 				}
@@ -719,20 +754,41 @@ func (env *Task) ApplyTransactions(txs *types.TransactionsByPriceAndNonce, bc Bl
 CommitTransactionLoop:
 	for atomic.LoadInt32(&abort) == 0 {
 		// Retrieve the next transaction and abort if all done
-		tx := txs.Peek()
-		if tx == nil {
+		if len(incorporatedTxs) == 0 {
 			// To indicate that it does not have enough transactions for params.BlockGenerationTimeLimit.
 			if numTxsChecked > 0 {
 				usedAllTxsCounter.Inc(1)
 			}
 			break
 		}
-		numTxsChecked++
+
+		var (
+			logs    []*types.Log
+			txOrGen = incorporatedTxs[0]
+			from    common.Address
+		)
+
+		// Verify that tx is included in the bundle
+		targetBundle := &builder.Bundle{}
+		numShift := 1
+		if bundleIdx := builder_impl.FindBundleIdx(bundles, txOrGen); bundleIdx != -1 {
+			targetBundle = bundles[bundleIdx]
+			numShift = len(targetBundle.BundleTxs)
+		}
+
+		tx, err := txOrGen.GetTx(env.state.GetNonce(nodeAddr))
+		if err != nil {
+			logger.Warn("TxGenerator returned a nil tx", "error", err)
+			builder_impl.PopTxs(&incorporatedTxs, numShift, &bundles, env.signer)
+			continue
+		}
+		// If target is the tx in bundle, len(targetBundle.BundleTxs) is appended to numTxsChecked.
+		numTxsChecked += int64(numShift)
 		// Error may be ignored here. The error has already been checked
 		// during transaction acceptance is the transaction pool.
 		//
 		// We use the eip155 signer regardless of the current hf.
-		from, _ := types.Sender(env.signer, tx)
+		from, _ = types.Sender(env.signer, tx)
 
 		// NOTE-Kaia Since Kaia is always in EIP155, the below replay protection code is not needed.
 		// TODO-Kaia-RemoveLater Remove the code commented below.
@@ -745,27 +801,30 @@ CommitTransactionLoop:
 		//	continue
 		//}
 		// Start executing the transaction
-		env.state.SetTxContext(tx.Hash(), common.Hash{}, env.tcount)
+		if len(targetBundle.BundleTxs) != 0 {
+			atomic.StoreInt32(&isExecutingBundleTxs, 1)
+			err, tx, logs = env.commitBundleTransaction(targetBundle, bc, nodeAddr, vmConfig)
+			if err != nil && tx != nil {
+				// override sender to error tx
+				from, _ = types.Sender(env.signer, tx)
+			}
+		} else {
+			env.state.SetTxContext(tx.Hash(), common.Hash{}, env.tcount)
+			err, logs = env.commitTransaction(tx, bc, nodeAddr, vmConfig)
+		}
 
-		err, logs := env.commitTransaction(tx, bc, rewardbase, vmConfig)
 		switch err {
-		case blockchain.ErrGasLimitReached:
-			// Pop the current out-of-gas transaction without shifting in the next from the account
-			logger.Trace("Gas limit exceeded for current block", "sender", from)
-			numTxsGasLimitReached++
-			txs.Pop()
-
 		case blockchain.ErrNonceTooLow:
 			// New head notification data race between the transaction pool and miner, shift
 			logger.Trace("Skipping transaction with low nonce", "sender", from, "nonce", tx.Nonce())
 			numTxsNonceTooLow++
-			txs.Shift()
+			builder_impl.ShiftTxs(&incorporatedTxs, numShift)
 
 		case blockchain.ErrNonceTooHigh:
 			// Reorg notification data race between the transaction pool and miner, skip account =
 			logger.Trace("Skipping account with high nonce", "sender", from, "nonce", tx.Nonce())
 			numTxsNonceTooHigh++
-			txs.Pop()
+			builder_impl.PopTxs(&incorporatedTxs, numShift, &bundles, env.signer)
 
 		case vm.ErrTotalTimeLimitReached:
 			logger.Warn("Transaction aborted due to time limit", "hash", tx.Hash().String())
@@ -780,20 +839,34 @@ CommitTransactionLoop:
 		case blockchain.ErrTxTypeNotSupported:
 			// Pop the unsupported transaction without shifting in the next from the account
 			logger.Trace("Skipping unsupported transaction type", "sender", from, "type", tx.Type())
-			txs.Pop()
+			builder_impl.PopTxs(&incorporatedTxs, numShift, &bundles, env.signer)
+
+		case kerrors.ErrRevertedBundleByVmErr:
+			// Pop transaction in bundle reverted by vm err without shifting in the next from the account
+			// During bundle execution, vm err is reverted, including the increment of the nonce, so a pop is executed.
+			logger.Trace("Skipping transaction in bundle reverted by vm err", "sender", from, "hash", tx.Hash().String())
+			builder_impl.PopTxs(&incorporatedTxs, numShift, &bundles, env.signer)
+
+		case kerrors.ErrTxGeneration:
+			// Pop transaction in bundle due to tx generation error without shifting in the next from the account
+			logger.Trace("Skipping transaction in bundle due to tx generation error", "err", err)
+			builder_impl.PopTxs(&incorporatedTxs, numShift, &bundles, env.signer)
 
 		case nil:
 			// Everything ok, collect the logs and shift in the next transaction from the same account
 			coalescedLogs = append(coalescedLogs, logs...)
-			env.tcount++
-			txs.Shift()
+			builder_impl.ShiftTxs(&incorporatedTxs, numShift)
 
 		default:
 			// Strange error, discard the transaction and get the next in line (note, the
 			// nonce-too-high clause will prevent us from executing in vain).
 			logger.Warn("Transaction failed, account skipped", "sender", from, "hash", tx.Hash().String(), "err", err)
 			strangeErrorTxsCounter.Inc(1)
-			txs.Shift()
+			builder_impl.ShiftTxs(&incorporatedTxs, numShift)
+		}
+		if len(targetBundle.BundleTxs) != 0 {
+			// After the last tx in the bundle finishes, set executingBundleTxs back to 0.
+			atomic.StoreInt32(&isExecutingBundleTxs, 0)
 		}
 	}
 
@@ -809,10 +882,10 @@ CommitTransactionLoop:
 	return coalescedLogs
 }
 
-func (env *Task) commitTransaction(tx *types.Transaction, bc BlockChain, rewardbase common.Address, vmConfig *vm.Config) (error, []*types.Log) {
+func (env *Task) commitTransaction(tx *types.Transaction, bc BlockChain, nodeAddr common.Address, vmConfig *vm.Config) (error, []*types.Log) {
 	snap := env.state.Snapshot()
 
-	receipt, _, err := bc.ApplyTransaction(env.config, &rewardbase, env.state, env.header, tx, &env.header.GasUsed, vmConfig)
+	receipt, _, err := bc.ApplyTransaction(env.config, &nodeAddr, env.state, env.header, tx, &env.header.GasUsed, vmConfig)
 	if err != nil {
 		if err != vm.ErrInsufficientBalance && err != vm.ErrTotalTimeLimitReached {
 			tx.MarkUnexecutable(true)
@@ -820,10 +893,78 @@ func (env *Task) commitTransaction(tx *types.Transaction, bc BlockChain, rewardb
 		env.state.RevertToSnapshot(snap)
 		return err, nil
 	}
+	env.tcount++
 	env.txs = append(env.txs, tx)
 	env.receipts = append(env.receipts, receipt)
 
 	return nil, receipt.Logs
+}
+
+func (env *Task) commitBundleTransaction(bundle *builder.Bundle, bc BlockChain, nodeAddr common.Address, vmConfig *vm.Config) (error, *types.Transaction, []*types.Log) {
+	lastSnapshot := env.state.Copy()
+	gasUsedSnapshot := env.header.GasUsed
+	tcountSnapshot := env.tcount
+	txs := []*types.Transaction{}
+	receipts := []*types.Receipt{}
+	logs := []*types.Log{}
+
+	markAllTxUnexecutable := func() {
+		for _, txOrGen := range bundle.BundleTxs {
+			if txOrGen.IsConcreteTx() {
+				tx, _ := txOrGen.GetTx(0)
+				tx.MarkUnexecutable(true)
+			}
+		}
+	}
+
+	restoreEnv := func() {
+		env.state.Set(lastSnapshot)
+		env.header.GasUsed = gasUsedSnapshot
+		env.tcount = tcountSnapshot
+	}
+
+	for _, txOrGen := range bundle.BundleTxs {
+		tx, err := txOrGen.GetTx(env.state.GetNonce(nodeAddr))
+		if err != nil {
+			logger.Error("TxGenerator error", "error", err)
+			markAllTxUnexecutable()
+			restoreEnv()
+			return kerrors.ErrTxGeneration, nil, nil
+		}
+
+		env.state.SetTxContext(tx.Hash(), common.Hash{}, env.tcount)
+		receipt, _, err := bc.ApplyTransaction(env.config, &nodeAddr, env.state, env.header, tx, &env.header.GasUsed, vmConfig)
+		// Bundled tx will be rejected with any receipt.Status other than success.
+		// There may be cases where a revert occurs within the EVM, which could result in an attack on a tx sender in an already executed bundle.
+		if err != nil || receipt.Status != types.ReceiptStatusSuccessful {
+			if err != vm.ErrInsufficientBalance && err != vm.ErrTotalTimeLimitReached {
+				markAllTxUnexecutable()
+			}
+			receiptStatus := ""
+			if receipt != nil {
+				receiptStatus = strconv.FormatUint(uint64(receipt.Status), 10)
+			}
+			logger.Warn("ApplyTransaction error, restoring env",
+				"blockNum", env.header.Number.String(), "txHash", tx.Hash().String(),
+				"error", err, "receiptStatus", receiptStatus,
+			)
+			restoreEnv()
+			if err == nil {
+				err = kerrors.ErrRevertedBundleByVmErr
+			}
+			return err, tx, nil
+		}
+
+		env.tcount++
+		txs = append(txs, tx)
+		receipts = append(receipts, receipt)
+		logs = append(logs, receipt.Logs...)
+	}
+
+	env.txs = append(env.txs, txs...)
+	env.receipts = append(env.receipts, receipts...)
+
+	return nil, nil, logs
 }
 
 func NewTask(config *params.ChainConfig, signer types.Signer, statedb *state.StateDB, header *types.Header) *Task {

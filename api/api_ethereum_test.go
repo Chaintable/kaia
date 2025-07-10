@@ -26,7 +26,6 @@ import (
 	"github.com/kaiachain/kaia/consensus/gxhash"
 	"github.com/kaiachain/kaia/consensus/mocks"
 	"github.com/kaiachain/kaia/crypto"
-	"github.com/kaiachain/kaia/governance"
 	"github.com/kaiachain/kaia/networks/rpc"
 	"github.com/kaiachain/kaia/params"
 	"github.com/kaiachain/kaia/rlp"
@@ -71,6 +70,34 @@ var (
 	}
 )
 
+// For floor data gas error case (EIP-7623)
+var (
+	// // SPDX-License-Identifier: GPL-3.0
+
+	// pragma solidity >=0.8.2 <0.9.0;
+	//
+	// /**
+	//  * @title Storage
+	//  * @dev Store & retrieve value in a variable
+	//  * @custom:dev-run-script ./scripts/deploy_with_ethers.ts
+	//  */
+	// contract Storage {
+	//
+	//     uint256 number;
+	//
+	//     /**
+	//      * @dev Return value
+	//      * @return value of 'number'
+	//      */
+	//     function retrieve() public view returns (uint256){
+	//         return number;
+	//     }
+	// }
+	floorDataGasTestCode = hexutil.Bytes(common.Hex2Bytes("6080604052348015600e575f5ffd5b50600436106026575f3560e01c80632e64cec114602a575b5f5ffd5b60306044565b604051603b91906062565b60405180910390f35b5f5f54905090565b5f819050919050565b605c81604c565b82525050565b5f60208201905060735f8301846055565b9291505056fea26469706673582212206aeab8d313a899d42a212113167e622ff770e746a3c3d0596d15fe2551d2c97464736f6c634300081e0033"))
+	// retrieve() with long junk to increase floor data gas. 104 nonzero tokens = 4160 floor data gas = 25160 intrinsic gas
+	floorDataGasTestData = hexutil.Bytes(append(common.Hex2Bytes("2e64cec1"), bytes.Repeat([]byte{0xff}, 100)...))
+)
+
 // TestEthereumAPI_Etherbase tests Etherbase.
 func TestEthereumAPI_Etherbase(t *testing.T) {
 	testNodeAddress(t, "Etherbase")
@@ -83,15 +110,10 @@ func TestEthereumAPI_Coinbase(t *testing.T) {
 
 // testNodeAddress generates nodeAddress and tests Etherbase and Coinbase.
 func testNodeAddress(t *testing.T, testAPIName string) {
-	gov := governance.NewMixedEngineNoInit(
-		dummyChainConfigForEthereumAPITest,
-		database.NewMemoryDBManager(),
-	)
 	key, _ := crypto.GenerateKey()
 	nodeAddress := crypto.PubkeyToAddress(key.PublicKey)
-	gov.SetNodeAddress(nodeAddress)
 
-	api := EthereumAPI{governanceAPI: governance.NewGovernanceAPI(gov)}
+	api := EthereumAPI{nodeAddress: nodeAddress}
 	results := reflect.ValueOf(&api).MethodByName(testAPIName).Call([]reflect.Value{})
 	result, ok := results[0].Interface().(common.Address)
 	assert.True(t, ok)
@@ -223,16 +245,14 @@ func testGetHeader(t *testing.T, testAPIName string, config *params.ChainConfig)
 	// Author is called when calculates miner field of Header.
 	dummyMiner := common.HexToAddress("0x9712f943b296758aaae79944ec975884188d3a96")
 	mockEngine.EXPECT().Author(gomock.Any()).Return(dummyMiner, nil)
-	var dummyTotalDifficulty uint64 = 5
-	mockBackend.EXPECT().GetTd(gomock.Any()).Return(new(big.Int).SetUint64(dummyTotalDifficulty))
 
 	// Create dummy header
 	header := types.CopyHeader(&types.Header{
 		ParentHash:  common.HexToHash("0xc8036293065bacdfce87debec0094a71dbbe40345b078d21dcc47adb4513f348"),
 		Rewardbase:  common.Address{},
-		TxHash:      common.HexToHash("0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"),
+		TxHash:      types.EmptyTxRootOriginal,
 		Root:        common.HexToHash("0xad31c32942fa033166e4ef588ab973dbe26657c594de4ba98192108becf0fec9"),
-		ReceiptHash: common.HexToHash("0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"),
+		ReceiptHash: types.EmptyTxRootOriginal,
 		Bloom:       types.Bloom{},
 		BlockScore:  new(big.Int).SetUint64(1),
 		Number:      new(big.Int).SetUint64(4),
@@ -277,20 +297,19 @@ func testGetHeader(t *testing.T, testAPIName string, config *params.ChainConfig)
 		"extraData": "0x",
 		"gasLimit": "0xe8d4a50fff",
 		"gasUsed": "0x2710",
-		"hash": "0xd6d5d8295f612bc824762f1945f4271c73aee9306bcf91e151d269369526ba60",
+		"hash": "0x852754129164bc6f3cdf4beaab557f2b058634be42e3470d5ef56a8e4ff01685",
 		"logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
 		"miner": "0x9712f943b296758aaae79944ec975884188d3a96",
 		"mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
 		"nonce": "0x0000000000000000",
 		"number": "0x4",
 		"parentHash": "0xc8036293065bacdfce87debec0094a71dbbe40345b078d21dcc47adb4513f348",
-		"receiptsRoot": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+		"receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
 		"sha3Uncles": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
 		"size": "0x244",
 		"stateRoot": "0xad31c32942fa033166e4ef588ab973dbe26657c594de4ba98192108becf0fec9",
 		"timestamp": "0x61d53854",
-		"totalDifficulty": "0x5",
-		"transactionsRoot": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+		"transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"
 	}`), &expected))
 
 	if config.IsEthTxTypeForkEnabled(common.Big0) {
@@ -299,7 +318,7 @@ func testGetHeader(t *testing.T, testAPIName string, config *params.ChainConfig)
 	if config.IsRandaoForkEnabled(common.Big0) {
 		expected["randomReveal"] = "0x94516a8bc695b5bf43aa077cd682d9475a3a6bed39a633395b78ed8f276e7c5bb00bb26a77825013c6718579f1b3ee2275b158801705ea77989e3acc849ee9c524bd1822bde3cba7be2aae04347f0d91508b7b7ce2f11ec36cbf763173421ae7"
 		expected["mixHash"] = "0xdf117d1245dceaae0a47f05371b23cd0d0db963ff9d5c8ba768dc989f4c31883"
-		expected["hash"] = "0x4179dd7e323cde164e287045857cbc930892f92479d8c375d5d622ddde59f912"
+		expected["hash"] = "0x36f1c36d1723049abf1202a1cda828eec6399edd654dae12b72a1642097a29e4"
 		expected["size"] = "0x2c4"
 	}
 	assert.Equal(t, stringifyMap(expected), stringifyMap(ethHeader))
@@ -330,14 +349,12 @@ func testGetBlock(t *testing.T, testAPIName string, fullTxs bool) {
 	// Author is called when calculates miner field of Header.
 	dummyMiner := common.HexToAddress("0x9712f943b296758aaae79944ec975884188d3a96")
 	mockEngine.EXPECT().Author(gomock.Any()).Return(dummyMiner, nil)
-	var dummyTotalDifficulty uint64 = 5
-	mockBackend.EXPECT().GetTd(gomock.Any()).Return(new(big.Int).SetUint64(dummyTotalDifficulty))
 
 	// Create dummy header
 	header := types.CopyHeader(&types.Header{
-		ParentHash: common.HexToHash("0xc8036293065bacdfce87debec0094a71dbbe40345b078d21dcc47adb4513f348"), Rewardbase: common.Address{}, TxHash: common.HexToHash("0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"),
+		ParentHash: common.HexToHash("0xc8036293065bacdfce87debec0094a71dbbe40345b078d21dcc47adb4513f348"), Rewardbase: common.Address{}, TxHash: types.EmptyTxRootOriginal,
 		Root:        common.HexToHash("0xad31c32942fa033166e4ef588ab973dbe26657c594de4ba98192108becf0fec9"),
-		ReceiptHash: common.HexToHash("0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"),
+		ReceiptHash: types.EmptyTxRootOriginal,
 		Bloom:       types.Bloom{},
 		BlockScore:  new(big.Int).SetUint64(1),
 		Number:      new(big.Int).SetUint64(4),
@@ -391,7 +408,6 @@ func testGetBlock(t *testing.T, testAPIName string, fullTxs bool) {
         "size": "0xe44",
         "stateRoot": "0xad31c32942fa033166e4ef588ab973dbe26657c594de4ba98192108becf0fec9",
         "timestamp": "0x61d53854",
-        "totalDifficulty": "0x5",
         "transactions": [
             {
               "blockHash": "0xc74d8c04d4d2f2e4ed9cd1731387248367cea7f149731b7a015371b220ffa0fb",
@@ -793,7 +809,6 @@ func testGetBlock(t *testing.T, testAPIName string, fullTxs bool) {
         "size": "0xe44",
         "stateRoot": "0xad31c32942fa033166e4ef588ab973dbe26657c594de4ba98192108becf0fec9",
         "timestamp": "0x61d53854",
-        "totalDifficulty": "0x5",
         "transactions": [
             "0x6231f24f79d28bb5b8425ce577b3b77cd9c1ab766fcfc5233358a2b1c2f4ff70",
             "0xf146858415c060eae65a389cbeea8aeadc79461038fbee331ffd97b41279dd63",
@@ -2445,7 +2460,7 @@ func (mc *testChainContext) GetHeader(common.Hash, uint64) *types.Header {
 // Contract C { constructor() { revert("hello"); } }
 var codeRevertHello = "0x6080604052348015600f57600080fd5b5060405162461bcd60e51b815260206004820152600560248201526468656c6c6f60d81b604482015260640160405180910390fdfe"
 
-func testEstimateGas(t *testing.T, mockBackend *mock_api.MockBackend, fnEstimateGas func(EthTransactionArgs) (hexutil.Uint64, error)) {
+func testEstimateGas(t *testing.T, mockBackend *mock_api.MockBackend, fnEstimateGas func(EthTransactionArgs, *EthStateOverride) (hexutil.Uint64, error)) {
 	chainConfig := &params.ChainConfig{}
 	chainConfig.IstanbulCompatibleBlock = common.Big0
 	chainConfig.LondonCompatibleBlock = common.Big0
@@ -2455,15 +2470,19 @@ func testEstimateGas(t *testing.T, mockBackend *mock_api.MockBackend, fnEstimate
 	chainConfig.ShanghaiCompatibleBlock = common.Big0
 	chainConfig.CancunCompatibleBlock = common.Big0
 	chainConfig.KaiaCompatibleBlock = common.Big0
+	chainConfig.PragueCompatibleBlock = common.Big0
 	var (
 		// genesis
 		account1 = common.HexToAddress("0xaaaa")
 		account2 = common.HexToAddress("0xbbbb")
 		account3 = common.HexToAddress("0xcccc")
+		account4 = common.HexToAddress("0xdddd")
+		account5 = common.HexToAddress("0xeeee")
 		gspec    = &blockchain.Genesis{Alloc: blockchain.GenesisAlloc{
 			account1: {Balance: big.NewInt(params.KAIA * 2)},
 			account2: {Balance: common.Big0},
 			account3: {Balance: common.Big0, Code: hexutil.MustDecode(codeRevertHello)},
+			account4: {Balance: big.NewInt(params.KAIA * 2), Code: append(types.DelegationPrefix, account5.Bytes()...)},
 		}, Config: chainConfig}
 
 		// blockchain
@@ -2501,11 +2520,13 @@ func testEstimateGas(t *testing.T, mockBackend *mock_api.MockBackend, fnEstimate
 	mockBackend.EXPECT().StateAndHeaderByNumber(any, any).DoAndReturn(getStateAndHeader).AnyTimes()
 	mockBackend.EXPECT().StateAndHeaderByNumberOrHash(any, any).DoAndReturn(getStateAndHeader).AnyTimes()
 	mockBackend.EXPECT().GetEVM(any, any, any, any, any).DoAndReturn(getEVM).AnyTimes()
+	mockBackend.EXPECT().IsConsoleLogEnabled().Return(false).AnyTimes()
 
 	testcases := []struct {
 		args      EthTransactionArgs
 		expectErr string
 		expectGas uint64
+		overrides EthStateOverride
 	}{
 		{ // simple transfer
 			args: EthTransactionArgs{
@@ -2580,10 +2601,42 @@ func testEstimateGas(t *testing.T, mockBackend *mock_api.MockBackend, fnEstimate
 			},
 			expectErr: "execution reverted: hello",
 		},
+		{ // Should be able to send to an EIP-7702 delegated account.
+			args: EthTransactionArgs{
+				From:  &account1,
+				To:    &account4,
+				Value: (*hexutil.Big)(big.NewInt(1)),
+			},
+			expectGas: 21000,
+		},
+		{ // Should be able to send as EIP-7702 delegated account.
+			args: EthTransactionArgs{
+				From:  &account4,
+				To:    &account2,
+				Value: (*hexutil.Big)(big.NewInt(1)),
+			},
+			expectGas: 21000,
+		},
+		{ // Should be able to handle EIP-7623.
+			args: EthTransactionArgs{
+				From: &account1,
+				To:   &account2,
+				Data: &floorDataGasTestData,
+			},
+			overrides: EthStateOverride{
+				account2: EthOverrideAccount{
+					Code: &floorDataGasTestCode,
+				},
+			},
+			expectGas: 25160,
+			// We return ErrIntrinsicGas instead of ErrFloorDataGas when floor data gas hits the cap.
+			// So EstimateGas will be able to return expected gas instead of this error.
+			// expectErr: "insufficient gas for floor data gas cost",
+		},
 	}
 
 	for i, tc := range testcases {
-		gas, err := fnEstimateGas(tc.args)
+		gas, err := fnEstimateGas(tc.args, &tc.overrides)
 		t.Logf("tc[%02d] = %d %v", i, gas, err)
 		if len(tc.expectErr) > 0 {
 			require.NotNil(t, err)
@@ -2599,7 +2652,7 @@ func TestEthereumAPI_EstimateGas(t *testing.T) {
 	mockCtrl, mockBackend, api := testInitForEthApi(t)
 	defer mockCtrl.Finish()
 
-	testEstimateGas(t, mockBackend, func(args EthTransactionArgs) (hexutil.Uint64, error) {
-		return api.EstimateGas(context.Background(), args, nil, nil)
+	testEstimateGas(t, mockBackend, func(args EthTransactionArgs, overrides *EthStateOverride) (hexutil.Uint64, error) {
+		return api.EstimateGas(context.Background(), args, nil, nil, overrides)
 	})
 }

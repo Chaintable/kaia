@@ -43,11 +43,11 @@ import (
 	"github.com/kaiachain/kaia/datasync/downloader"
 	"github.com/kaiachain/kaia/datasync/fetcher"
 	"github.com/kaiachain/kaia/event"
+	"github.com/kaiachain/kaia/kaiax/staking"
 	"github.com/kaiachain/kaia/networks/p2p"
 	"github.com/kaiachain/kaia/networks/p2p/discover"
 	"github.com/kaiachain/kaia/node/cn/snap"
 	"github.com/kaiachain/kaia/params"
-	"github.com/kaiachain/kaia/reward"
 	"github.com/kaiachain/kaia/rlp"
 	"github.com/kaiachain/kaia/storage/database"
 	"github.com/kaiachain/kaia/storage/statedb"
@@ -135,6 +135,8 @@ type ProtocolManager struct {
 
 	// syncStop is a flag to stop peer sync
 	syncStop int32
+
+	stakingModule staking.StakingModule
 }
 
 // NewProtocolManager returns a new Kaia sub protocol manager. The Kaia sub protocol manages peers capable
@@ -310,7 +312,7 @@ func NewProtocolManager(config *params.ChainConfig, mode downloader.SyncMode, ne
 		if config.Istanbul != nil {
 			proposerPolicy = config.Istanbul.ProposerPolicy
 		}
-		manager.downloader = downloader.New(mode, chainDB, stateBloom, manager.eventMux, blockchain, nil, manager.removePeer, proposerPolicy)
+		manager.downloader = downloader.New(mode, chainDB, stateBloom, manager.eventMux, blockchain, nil, manager.stakingModule, manager.removePeer, proposerPolicy)
 	}
 
 	// Create and set fetcher
@@ -344,6 +346,10 @@ func NewProtocolManager(config *params.ChainConfig, mode downloader.SyncMode, ne
 // istanbul BFT
 func (pm *ProtocolManager) RegisterValidator(connType common.ConnType, validator p2p.PeerTypeValidator) {
 	pm.peers.RegisterValidator(connType, validator)
+}
+
+func (pm *ProtocolManager) RegisterStakingModule(stakingModule staking.StakingModule) {
+	pm.stakingModule = stakingModule
 }
 
 func (pm *ProtocolManager) getWSEndPoint() string {
@@ -793,13 +799,23 @@ func handleBlockHeadersRequestMsg(pm *ProtocolManager, p Peer, msg p2p.Msg) erro
 		switch {
 		case query.Origin.Hash != (common.Hash{}) && query.Reverse:
 			// Hash based traversal towards the genesis block
-			for i := 0; i < int(query.Skip)+1; i++ {
-				if header := pm.blockchain.GetHeader(query.Origin.Hash, number); header != nil {
-					query.Origin.Hash = header.ParentHash
-					number--
-				} else {
-					unknown = true
-					break
+			var (
+				current = origin.Number.Uint64()
+				next    = current - query.Skip - 1
+			)
+			if next >= current {
+				infos, _ := json.MarshalIndent(p.GetP2PPeer().Info(), "", "  ")
+				p.GetP2PPeer().Log().Warn("GetBlockHeaders skip underflow attack", "current", current, "skip", query.Skip, "next", next, "attacker", infos)
+				unknown = true
+			} else {
+				for i := 0; i < int(query.Skip)+1; i++ {
+					if header := pm.blockchain.GetHeader(query.Origin.Hash, number); header != nil {
+						query.Origin.Hash = header.ParentHash
+						number--
+					} else {
+						unknown = true
+						break
+					}
 				}
 			}
 		case query.Origin.Hash != (common.Hash{}) && !query.Reverse:
@@ -825,15 +841,22 @@ func handleBlockHeadersRequestMsg(pm *ProtocolManager, p Peer, msg p2p.Msg) erro
 			}
 		case query.Reverse:
 			// Number based traversal towards the genesis block
-			if query.Origin.Number >= query.Skip+1 {
-				query.Origin.Number -= query.Skip + 1
-			} else {
+			current := query.Origin.Number
+			ancestor := current - (query.Skip + 1)
+			if ancestor >= current { // check for underflow
 				unknown = true
+			} else {
+				query.Origin.Number = ancestor
 			}
-
 		case !query.Reverse:
 			// Number based traversal towards the leaf block
-			query.Origin.Number += query.Skip + 1
+			current := query.Origin.Number
+			next := current + query.Skip + 1
+			if next <= current { // check for overflow
+				unknown = true
+			} else {
+				query.Origin.Number = next
+			}
 		}
 	}
 	return p.SendBlockHeaders(headers)
@@ -1046,23 +1069,27 @@ func handleStakingInfoRequestMsg(pm *ProtocolManager, p Peer, msg p2p.Msg) error
 		if header == nil {
 			continue
 		}
-		var result *reward.StakingInfo
 		number := header.Number.Uint64()
+		var result *staking.P2PStakingInfo
 		if pm.chainconfig.IsKaiaForkEnabled(header.Number) {
-			if number > 0 {
-				number--
+			st, err := pm.stakingModule.GetStakingInfo(number)
+			if st == nil || err != nil {
+				continue
 			}
-			result = reward.GetStakingInfoForKaiaBlock(number)
+			result = staking.FromStakingInfoWithGini(st, false, pm.chainconfig.Governance.Reward.MinimumStake.Uint64())
 		} else {
-			result = reward.GetStakingInfoOnStakingBlock(number)
+			st := pm.stakingModule.GetStakingInfoFromDB(number)
+			if st == nil {
+				continue
+			}
+			result = staking.FromStakingInfoWithGini(st, pm.chainconfig.Governance.Reward.UseGiniCoeff, pm.chainconfig.Governance.Reward.MinimumStake.Uint64())
 		}
-		if result == nil {
-			continue
-		}
+
 		// If known, encode and queue for response packet
 		if encoded, err := rlp.EncodeToBytes(result); err != nil {
 			logger.Error("Failed to encode staking info", "err", err)
 		} else {
+			fmt.Println("encoding", result, "len", len(encoded))
 			stakingInfos = append(stakingInfos, encoded)
 			bytes += len(encoded)
 		}
@@ -1077,7 +1104,7 @@ func handleStakingInfoMsg(pm *ProtocolManager, p Peer, msg p2p.Msg) error {
 	}
 
 	// A batch of stakingInfos arrived to one of our previous requests
-	var stakingInfos []*reward.StakingInfo
+	var stakingInfos []*staking.P2PStakingInfo
 	if err := msg.Decode(&stakingInfos); err != nil {
 		return errResp(ErrDecode, "msg %v: %v", msg, err)
 	}

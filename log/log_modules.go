@@ -128,6 +128,16 @@ const (
 	KAS
 	FORK
 	NodeCnGasPrice
+	KaiaxStaking
+	KaiaxReward
+	KaiaxSupply
+
+	// 61~70
+	KaiaxGov
+	KaiaxValset
+	KaiaxRandao
+	KaiaxGasless
+	KaiaxBuilder
 
 	BlockchainVmOeTracer
 
@@ -209,6 +219,16 @@ var moduleNames = [ModuleNameLen]string{
 	"kas",
 	"fork",
 	"node/cn/gasprice",
+	"kaiax/staking",
+	"kaiax/reward",
+	"kaiax/supply",
+
+	// 61~70
+	"kaiax/gov",
+	"kaiax/valset",
+	"kaiax/randao",
+	"kaiax/gasless",
+	"kaiax/builder",
 
 	"blockchain/vm/oetracer",
 	"flatdb",

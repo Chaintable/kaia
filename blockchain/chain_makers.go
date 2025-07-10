@@ -72,6 +72,18 @@ func (b *BlockGen) SetGovData(data []byte) {
 	b.header.Governance = data
 }
 
+func (b *BlockGen) SetMixHash(mixHash common.Hash) {
+	b.header.MixHash = mixHash.Bytes()
+}
+
+func (b *BlockGen) SetBaseFee(baseFee *big.Int) {
+	b.header.BaseFee = baseFee
+}
+
+func (b *BlockGen) SetTime(time *big.Int) {
+	b.header.Time = time
+}
+
 // AddTx adds a transaction to the generated block.
 // In gxhash, arbitrary address is used as a block author's address.
 //
@@ -100,6 +112,26 @@ func (b *BlockGen) AddTxWithChain(bc *BlockChain, tx *types.Transaction) {
 	}
 	b.txs = append(b.txs, tx)
 	b.receipts = append(b.receipts, receipt)
+}
+
+// AddTxWithChainEvenHasError is an AddTx that inherits the vmConfig of the received chain
+// and does not panic even if an error occurs.
+func (b *BlockGen) AddTxWithChainEvenHasError(bc *BlockChain, tx *types.Transaction) error {
+	b.statedb.SetTxContext(tx.Hash(), common.Hash{}, len(b.txs))
+	var vmConfig vm.Config
+	if bc != nil {
+		vmConfig = bc.vmConfig
+	}
+	auther, err := b.engine.Author(b.header)
+	if err != nil {
+		return err
+	}
+	receipt, _, _ := bc.ApplyTransaction(b.config, &auther, b.statedb, b.header, tx, &b.header.GasUsed, &vmConfig)
+	b.txs = append(b.txs, tx)
+	if receipt != nil {
+		b.receipts = append(b.receipts, receipt)
+	}
+	return nil
 }
 
 // AddUncheckedTx forcefully adds a transaction to the block without any
@@ -191,6 +223,8 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 
 		b := &BlockGen{i: i, parent: parent, chain: blocks, chainReader: blockchain, statedb: stateDB, config: config, engine: engine}
 		b.header = makeHeader(b.chainReader, parent, stateDB, b.engine)
+
+		engine.Initialize(blockchain, b.header, stateDB)
 
 		// Execute any user modifications to the block and finalize it
 		if gen != nil {

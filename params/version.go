@@ -26,7 +26,7 @@ import "fmt"
 
 const (
 	ReleaseNum   = 0
-	VersionMajor = 1 // Major version component of the current release
+	VersionMajor = 2 // Major version component of the current release
 	VersionMinor = 0 // Minor version component of the current release
 	VersionPatch = 3 // Patch version component of the current release
 )
