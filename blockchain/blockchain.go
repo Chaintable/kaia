@@ -50,6 +50,7 @@ import (
 	"github.com/kaiachain/kaia/event"
 	"github.com/kaiachain/kaia/flat-state-history/flatdb"
 	"github.com/kaiachain/kaia/fork"
+	"github.com/kaiachain/kaia/kaiax"
 	"github.com/kaiachain/kaia/log"
 	kaiametrics "github.com/kaiachain/kaia/metrics"
 	"github.com/kaiachain/kaia/params"
@@ -218,6 +219,10 @@ type BlockChain struct {
 	quitWarmUp         chan struct{}
 
 	prefetchTxCh chan prefetchTx
+
+	// kaiax modules
+	executionModules  []kaiax.ExecutionModule
+	rewindableModules []kaiax.RewindableModule
 }
 
 // prefetchTx is used to prefetch transactions, when fetcher works.
@@ -442,14 +447,6 @@ func (bc *BlockChain) SetCanonicalBlock(blockNum uint64) {
 	logger.Info("successfully set the canonical block", "blockNum", blockNum)
 }
 
-func (bc *BlockChain) UseGiniCoeff() bool {
-	return bc.chainConfig.Governance.Reward.UseGiniCoeff
-}
-
-func (bc *BlockChain) ProposerPolicy() uint64 {
-	return bc.chainConfig.Istanbul.ProposerPolicy
-}
-
 func (bc *BlockChain) getProcInterrupt() bool {
 	return atomic.LoadInt32(&bc.procInterrupt) == 1
 }
@@ -593,7 +590,9 @@ func (bc *BlockChain) setHeadBeyondRoot(head uint64, root common.Hash, repair bo
 				}
 			}
 			if newHeadBlock.NumberU64() == 0 {
-				return 0, errors.New("rewound to block number 0, but repair failed")
+				if _, err := state.New(newHeadBlock.Root(), bc.stateCache, bc.snaps, nil); err != nil {
+					return 0, errors.New("rewound to block number 0, but repair failed")
+				}
 			}
 			bc.db.WriteHeadBlockHash(newHeadBlock.Hash())
 
@@ -603,6 +602,10 @@ func (bc *BlockChain) setHeadBeyondRoot(head uint64, root common.Hash, repair bo
 			// to low, so it's safe the update in-memory markers directly.
 			bc.currentBlock.Store(newHeadBlock)
 			headBlockNumberGauge.Update(int64(newHeadBlock.NumberU64()))
+
+			for _, module := range bc.rewindableModules {
+				module.RewindTo(newHeadBlock)
+			}
 		}
 
 		// Rewind the fast block in a simpleton way to the target head
@@ -621,10 +624,6 @@ func (bc *BlockChain) setHeadBeyondRoot(head uint64, root common.Hash, repair bo
 			bc.currentFastBlock.Store(newHeadFastBlock)
 		}
 
-		// Rewind the supply checkpoint
-		newLastSupplyCheckpointNumber := header.Number.Uint64() - (header.Number.Uint64() % params.SupplyCheckpointInterval)
-		bc.db.WriteLastSupplyCheckpointNumber(newLastSupplyCheckpointNumber)
-
 		return bc.CurrentBlock().Number().Uint64(), nil
 	}
 
@@ -640,11 +639,20 @@ func (bc *BlockChain) setHeadBeyondRoot(head uint64, root common.Hash, repair bo
 		if params.IsCheckpointInterval(num) {
 			bc.db.DeleteIstanbulSnapshot(hash)
 		}
-		if bc.Config().Istanbul.ProposerPolicy == params.WeightedRandom && !bc.Config().IsKaiaForkEnabled(new(big.Int).SetUint64(num)) && params.IsStakingUpdateInterval(num) {
-			bc.db.DeleteStakingInfo(num)
+
+		for _, module := range bc.rewindableModules {
+			module.RewindDelete(hash, num)
 		}
-		bc.db.DeleteSupplyCheckpoint(num)
 	}
+
+	for _, module := range bc.rewindableModules {
+		module.Stop()
+	}
+	defer func() {
+		for _, module := range bc.rewindableModules {
+			module.Start()
+		}
+	}()
 
 	// If SetHead was only called as a chain reparation method, try to skip
 	// touching the header chain altogether
@@ -1031,7 +1039,7 @@ func (bc *BlockChain) GetReceiptByTxHash(txHash common.Hash) *types.Receipt {
 
 	receipts := bc.GetReceiptsByBlockHash(blockHash)
 	if len(receipts) <= int(index) {
-		logger.Error("receipt index exceeds the size of receipts", "receiptIndex", index, "receiptsSize", len(receipts))
+		logger.Error("receipt index exceeds the size of receipts", "receiptIndex", index, "receiptsSize", len(receipts), "txHash", txHash, "blockHash", blockHash)
 		return nil
 	}
 	return receipts[index]
@@ -1542,7 +1550,7 @@ func isCommitTrieRequired(bc *BlockChain, blockNum uint64) bool {
 	}
 
 	if bc.chainConfig.Istanbul != nil {
-		return bc.ProposerPolicy() == params.WeightedRandom &&
+		return bc.chainConfig.Istanbul.ProposerPolicy == params.WeightedRandom &&
 			params.IsStakingUpdateInterval(blockNum)
 	}
 	return false
@@ -2154,14 +2162,9 @@ func (bc *BlockChain) insertChain(chain types.Blocks) (int, []interface{}, []*ty
 		cache, _, _ := bc.stateCache.TrieDB().Size()
 		stats.report(chain, i, cache)
 
-		// update governance CurrentSet if it is at an epoch block
-		if bc.engine.CreateSnapshot(bc, block.NumberU64(), block.Hash(), nil) != nil {
-			return i, events, coalescedLogs, err
-		}
-
-		// update governance parameters
-		if istanbul, ok := bc.engine.(consensus.Istanbul); ok {
-			if err = istanbul.UpdateParam(block.NumberU64()); err != nil {
+		// Invoke ExecutionModules after inserting a block.
+		for _, module := range bc.executionModules {
+			if err := module.PostInsertBlock(block); err != nil {
 				return i, events, coalescedLogs, err
 			}
 		}
@@ -2785,6 +2788,16 @@ func (bc *BlockChain) ApplyTransaction(chainConfig *params.ChainConfig, author *
 		vmConfig.Debug = true
 		vmConfig.Tracer = txtracev2.NewOeTracer(bc.TxTraceStore(), header.Hash(), header.Number, tx.Hash(), uint64(statedb.TxIndex()))
 	}
+
+	// change evm and msg for eest
+	if bc != nil {
+		if e, hasMethod := bc.Engine().(interface {
+			BeforeApplyMessage(*vm.EVM, *types.Transaction)
+		}); hasMethod {
+			e.BeforeApplyMessage(vmenv, msg)
+		}
+	}
+
 	// Apply the transaction to the current state (included in the env)
 	result, err := ApplyMessage(vmenv, msg)
 	if err != nil {
@@ -2818,6 +2831,14 @@ func (bc *BlockChain) ApplyTransaction(chainConfig *params.ChainConfig, author *
 	}
 
 	return receipt, internalTrace, err
+}
+
+func (bc *BlockChain) RegisterExecutionModule(modules ...kaiax.ExecutionModule) {
+	bc.executionModules = append(bc.executionModules, modules...)
+}
+
+func (bc *BlockChain) RegisterRewindableModule(modules ...kaiax.RewindableModule) {
+	bc.rewindableModules = append(bc.rewindableModules, modules...)
 }
 
 func GetInternalTxTrace(tracer vm.Tracer) (*vm.InternalTxTrace, error) {

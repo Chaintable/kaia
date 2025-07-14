@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/kaiachain/kaia/blockchain"
+	"github.com/kaiachain/kaia/blockchain/state"
 	"github.com/kaiachain/kaia/blockchain/types"
 	"github.com/kaiachain/kaia/blockchain/vm"
 	"github.com/kaiachain/kaia/common"
@@ -40,9 +41,15 @@ import (
 	"github.com/kaiachain/kaia/consensus/misc"
 	"github.com/kaiachain/kaia/crypto"
 	"github.com/kaiachain/kaia/crypto/sha3"
-	"github.com/kaiachain/kaia/governance"
+	"github.com/kaiachain/kaia/datasync/downloader"
+	"github.com/kaiachain/kaia/kaiax/builder"
+	"github.com/kaiachain/kaia/kaiax/gov"
+	gov_impl "github.com/kaiachain/kaia/kaiax/gov/impl"
+	randao_impl "github.com/kaiachain/kaia/kaiax/randao/impl"
+	reward_impl "github.com/kaiachain/kaia/kaiax/reward/impl"
+	staking_impl "github.com/kaiachain/kaia/kaiax/staking/impl"
+	valset_impl "github.com/kaiachain/kaia/kaiax/valset/impl"
 	"github.com/kaiachain/kaia/params"
-	"github.com/kaiachain/kaia/reward"
 	"github.com/kaiachain/kaia/rlp"
 	"github.com/kaiachain/kaia/storage/database"
 	"github.com/kaiachain/kaia/work"
@@ -65,8 +72,8 @@ type BCData struct {
 	validatorPrivKeys  []*ecdsa.PrivateKey
 	engine             consensus.Istanbul
 	genesis            *blockchain.Genesis
-	governance         governance.Engine
-	rewardDistributor  *reward.RewardDistributor
+	govModule          gov.GovModule
+	isMiner            bool
 }
 
 var (
@@ -74,7 +81,11 @@ var (
 	nodeAddr = common.StringToAddress("nodeAddr")
 )
 
-func NewBCData(maxAccounts, numValidators int) (*BCData, error) {
+func NewBCDataWithConfigs(maxAccounts, numValidators int, chainCfg *params.ChainConfig, cacheConfig *blockchain.CacheConfig) (*BCData, error) {
+	if chainCfg == nil {
+		return nil, errors.New("chainConfig is nil")
+	}
+
 	if numValidators > maxAccounts {
 		return nil, errors.New("maxAccounts should be bigger numValidators!!")
 	}
@@ -94,10 +105,6 @@ func NewBCData(maxAccounts, numValidators int) (*BCData, error) {
 	chainDb := NewDatabase(dir, database.LevelDB)
 
 	////////////////////////////////////////////////////////////////////////////////
-	// Create a governance
-	gov := generateGovernaceDataForTest()
-	gov.SetNodeAddress(nodeAddr)
-	////////////////////////////////////////////////////////////////////////////////
 	// Create accounts as many as maxAccounts
 	addrs, privKeys, err := createAccounts(maxAccounts)
 	if err != nil {
@@ -114,36 +121,79 @@ func NewBCData(maxAccounts, numValidators int) (*BCData, error) {
 
 	////////////////////////////////////////////////////////////////////////////////
 	// Setup istanbul consensus backend
+	mGov := gov_impl.NewGovModule()
 	engine := istanbulBackend.New(&istanbulBackend.BackendOpts{
 		IstanbulConfig: istanbul.DefaultConfig,
 		Rewardbase:     genesisAddr,
 		PrivateKey:     validatorPrivKeys[0],
 		DB:             chainDb,
-		Governance:     gov,
+		GovModule:      mGov,
 		NodeType:       common.CONSENSUSNODE,
 	})
-
 	////////////////////////////////////////////////////////////////////////////////
 	// Make a blockchain
-	bc, genesis, err := initBlockChain(chainDb, nil, addrs, validatorAddresses, nil, engine)
+	bc, genesis, err := initBlockChain(chainDb, cacheConfig, addrs, validatorAddresses, nil, engine, chainCfg)
 	if err != nil {
 		return nil, err
 	}
 
-	engine.Start(bc, bc.CurrentBlock, bc.HasBadBlock)
-
-	governance.AddGovernanceCacheForTest(gov, 0, genesis.Config)
-	rewardDistributor := reward.NewRewardDistributor(gov)
+	////////////////////////////////////////////////////////////////////////////////
+	// Setup Kaiax modules
+	mStaking := staking_impl.NewStakingModule()
+	mReward := reward_impl.NewRewardModule()
+	mValset := valset_impl.NewValsetModule()
+	mRandao := randao_impl.NewRandaoModule()
+	fakeDownloader := downloader.NewFakeDownloader()
+	err = errors.Join(
+		mGov.Init(&gov_impl.InitOpts{
+			ChainConfig: genesis.Config,
+			Chain:       bc,
+			ChainKv:     chainDb.GetMiscDB(),
+			Valset:      mValset,
+			NodeAddress: nodeAddr,
+		}),
+		mReward.Init(&reward_impl.InitOpts{
+			ChainConfig:   genesis.Config,
+			Chain:         bc,
+			GovModule:     mGov,
+			StakingModule: mStaking, // Not used in "Simple" istanbul policy
+		}),
+		mValset.Init(&valset_impl.InitOpts{
+			Chain:         bc,
+			ChainKv:       chainDb.GetMiscDB(),
+			GovModule:     mGov,
+			StakingModule: mStaking,
+		}),
+		mRandao.Init(&randao_impl.InitOpts{
+			ChainConfig: genesis.Config,
+			Chain:       bc,
+			Downloader:  fakeDownloader,
+		}),
+	)
+	if err != nil {
+		return nil, err
+	}
+	engine.RegisterKaiaxModules(mGov, mStaking, mValset, mRandao)
+	engine.RegisterConsensusModule(mReward)
+	if err = engine.Start(bc, bc.CurrentBlock, bc.HasBadBlock); err != nil {
+		return nil, err
+	}
 
 	return &BCData{
 		bc, addrs, privKeys, chainDb,
 		&genesisAddr, validatorAddresses,
-		validatorPrivKeys, engine, genesis, gov, rewardDistributor,
+		validatorPrivKeys, engine, genesis, mGov, false,
 	}, nil
+}
+
+// NewBCData enables all hardforks except randao hardfork
+func NewBCData(maxAccounts, numValidators int) (*BCData, error) {
+	return NewBCDataWithConfigs(maxAccounts, numValidators, Forks["Byzantium"], nil)
 }
 
 func (bcdata *BCData) Shutdown() {
 	bcdata.bc.Stop()
+	bcdata.engine.Stop()
 
 	bcdata.db.Close()
 	// Remove leveldb dir which was created for this test.
@@ -186,18 +236,18 @@ func (bcdata *BCData) prepareHeader() (*types.Header, error) {
 	return header, nil
 }
 
-func (bcdata *BCData) MineABlock(transactions types.Transactions, signer types.Signer, prof *profile.Profiler) (*types.Block, types.Receipts, error) {
+func (bcdata *BCData) MineABlock(transactions types.Transactions, signer types.Signer, prof *profile.Profiler, txBundlingModules []builder.TxBundlingModule, builderModule builder.BuilderModule) (*state.StateDB, *types.Block, types.Receipts, error) {
 	// Set the block header
 	start := time.Now()
 	header, err := bcdata.prepareHeader()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	prof.Profile("mine_prepareHeader", time.Now().Sub(start))
 
-	statedb, err := bcdata.bc.State()
+	statedb, err := bcdata.bc.PrunableStateAt(bcdata.bc.CurrentBlock().Root(), bcdata.bc.CurrentBlock().NumberU64())
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// Group transactions by the sender address
@@ -206,7 +256,7 @@ func (bcdata *BCData) MineABlock(transactions types.Transactions, signer types.S
 	for _, tx := range transactions {
 		acc, err := types.Sender(signer, tx)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		txs[acc] = append(txs[acc], tx)
 	}
@@ -214,13 +264,13 @@ func (bcdata *BCData) MineABlock(transactions types.Transactions, signer types.S
 
 	// Create a transaction set where transactions are sorted by price and nonce
 	start = time.Now()
-	txset := types.NewTransactionsByPriceAndNonce(signer, txs, nil)
+	txset := types.NewTransactionsByPriceAndNonce(signer, txs, header.BaseFee)
 	prof.Profile("mine_NewTransactionsByPriceAndNonce", time.Now().Sub(start))
 
 	// Apply the set of transactions
 	start = time.Now()
 	task := work.NewTask(bcdata.bc.Config(), signer, statedb, header)
-	task.ApplyTransactions(txset, bcdata.bc, *bcdata.rewardBase)
+	task.ApplyTransactions(txset, bcdata.bc, *bcdata.rewardBase, txBundlingModules)
 	newtxs := task.Transactions()
 	receipts := task.Receipts()
 	prof.Profile("mine_ApplyTransactions", time.Now().Sub(start))
@@ -229,7 +279,7 @@ func (bcdata *BCData) MineABlock(transactions types.Transactions, signer types.S
 	start = time.Now()
 	b, err := bcdata.engine.Finalize(bcdata.bc, header, statedb, newtxs, receipts)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	prof.Profile("mine_finalize_block", time.Now().Sub(start))
 
@@ -238,11 +288,12 @@ func (bcdata *BCData) MineABlock(transactions types.Transactions, signer types.S
 	start = time.Now()
 	b, err = sealBlock(b, bcdata.validatorPrivKeys)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
+
 	prof.Profile("mine_seal_block", time.Now().Sub(start))
 
-	return b, receipts, nil
+	return statedb, b, receipts, nil
 }
 
 func (bcdata *BCData) GenABlock(accountMap *AccountMap, opt *testOption,
@@ -289,7 +340,7 @@ func (bcdata *BCData) GenABlockWithTxpool(accountMap *AccountMap, txpool *blockc
 
 	start = time.Now()
 	task := work.NewTask(bcdata.bc.Config(), signer, statedb, header)
-	task.ApplyTransactions(pooltxs, bcdata.bc, *bcdata.rewardBase)
+	task.ApplyTransactions(pooltxs, bcdata.bc, *bcdata.rewardBase, nil)
 	newtxs := task.Transactions()
 	receipts := task.Receipts()
 	prof.Profile("mine_ApplyTransactions", time.Now().Sub(start))
@@ -311,7 +362,7 @@ func (bcdata *BCData) GenABlockWithTxpool(accountMap *AccountMap, txpool *blockc
 
 	// Update accountMap
 	start = time.Now()
-	if err := accountMap.Update(newtxs, signer, statedb, b.NumberU64()); err != nil {
+	if err := accountMap.Update(newtxs, nil, nil, signer, statedb, b.NumberU64()); err != nil {
 		return err
 	}
 	prof.Profile("main_update_accountMap", time.Now().Sub(start))
@@ -324,18 +375,34 @@ func (bcdata *BCData) GenABlockWithTxpool(accountMap *AccountMap, txpool *blockc
 	prof.Profile("main_insert_blockchain", time.Now().Sub(start))
 
 	// Apply reward
-	config := bcdata.bc.Config()
-	rules := config.Rules(bcdata.bc.CurrentHeader().Number)
-	pset, err := params.NewGovParamSetChainConfig(config)
+	mStaking := staking_impl.NewStakingModule()
+	mReward := reward_impl.NewRewardModule()
+	mGov := gov_impl.NewGovModule()
+	err = errors.Join(
+		mGov.Init(&gov_impl.InitOpts{
+			ChainConfig: bcdata.bc.Config(),
+			ChainKv:     bcdata.db.GetMiscDB(),
+			Chain:       bcdata.bc,
+		}),
+		mReward.Init(&reward_impl.InitOpts{
+			ChainConfig:   bcdata.bc.Config(),
+			Chain:         bcdata.bc,
+			GovModule:     mGov,
+			StakingModule: mStaking, // Not used in "Simple" istanbul policy
+		}),
+	)
 	if err != nil {
 		return err
 	}
-	start = time.Now()
-	spec, err := reward.CalcDeferredRewardSimple(header, b.Transactions(), receipts, rules, pset)
-	if err != nil {
+
+	// Because we have AccountMap instead of StateDB, explicitly call AddBalance here.
+	if spec, err := mReward.GetDeferredReward(header, b.Transactions(), receipts); err != nil {
 		return err
+	} else {
+		for addr, reward := range spec.Rewards {
+			accountMap.AddBalance(addr, reward)
+		}
 	}
-	reward.DistributeBlockReward(accountMap, spec.Rewards)
 	prof.Profile("main_apply_reward", time.Now().Sub(start))
 
 	// Verification with accountMap
@@ -355,6 +422,18 @@ func (bcdata *BCData) GenABlockWithTxpool(accountMap *AccountMap, txpool *blockc
 func (bcdata *BCData) GenABlockWithTransactions(accountMap *AccountMap, transactions types.Transactions,
 	prof *profile.Profiler,
 ) error {
+	return bcdata.genABlockWithTransactionsWithBundle(accountMap, transactions, nil, prof, nil, nil)
+}
+
+func (bcdata *BCData) GenABlockWithTransactionsWithBundle(accountMap *AccountMap, transactions types.Transactions, txHashesExpectedFail []common.Hash,
+	prof *profile.Profiler, txBundlingModules []builder.TxBundlingModule, builderModule builder.BuilderModule,
+) error {
+	return bcdata.genABlockWithTransactionsWithBundle(accountMap, transactions, txHashesExpectedFail, prof, txBundlingModules, builderModule)
+}
+
+func (bcdata *BCData) genABlockWithTransactionsWithBundle(accountMap *AccountMap, transactions types.Transactions, txHashesExpectedFail []common.Hash,
+	prof *profile.Profiler, txBundlingModules []builder.TxBundlingModule, builderModule builder.BuilderModule,
+) error {
 	signer := types.MakeSigner(bcdata.bc.Config(), bcdata.bc.CurrentHeader().Number)
 
 	statedb, err := bcdata.bc.State()
@@ -364,51 +443,70 @@ func (bcdata *BCData) GenABlockWithTransactions(accountMap *AccountMap, transact
 
 	// Update accountMap
 	start := time.Now()
-	if err := accountMap.Update(transactions, signer, statedb, bcdata.bc.CurrentBlock().NumberU64()); err != nil {
+	if err := accountMap.Update(transactions, txHashesExpectedFail, txBundlingModules, signer, statedb, bcdata.bc.CurrentBlock().NumberU64()); err != nil {
 		return err
 	}
 	prof.Profile("main_update_accountMap", time.Now().Sub(start))
 
 	// Mine a block!
 	start = time.Now()
-	b, receipts, err := bcdata.MineABlock(transactions, signer, prof)
+	statedb, b, receipts, err := bcdata.MineABlock(transactions, signer, prof, txBundlingModules, builderModule)
 	if err != nil {
 		return err
 	}
 	prof.Profile("main_mineABlock", time.Now().Sub(start))
 
-	txs := make(types.Transactions, len(b.Transactions()))
-	for i, tt := range b.Transactions() {
-		encodedTx, err := rlp.EncodeToBytes(tt)
-		if err != nil {
-			return err
+	if bcdata.isMiner {
+		start = time.Now()
+		bcdata.bc.WriteBlockWithState(b, receipts, statedb)
+		prof.Profile("main_write_block", time.Now().Sub(start))
+	} else {
+		txs := make(types.Transactions, len(b.Transactions()))
+		for i, tt := range b.Transactions() {
+			encodedTx, err := rlp.EncodeToBytes(tt)
+			if err != nil {
+				return err
+			}
+			decodedTx := types.Transaction{}
+			rlp.DecodeBytes(encodedTx, &decodedTx)
+			txs[i] = &decodedTx
 		}
-		decodedTx := types.Transaction{}
-		rlp.DecodeBytes(encodedTx, &decodedTx)
-		txs[i] = &decodedTx
-	}
-	b = b.WithBody(txs)
+		b = b.WithBody(txs)
 
-	// Insert the block into the blockchain
-	start = time.Now()
-	if n, err := bcdata.bc.InsertChain(types.Blocks{b}); err != nil {
-		return fmt.Errorf("err = %s, n = %d\n", err, n)
+		// Insert the block into the blockchain
+		start = time.Now()
+		if n, err := bcdata.bc.InsertChain(types.Blocks{b}); err != nil {
+			return fmt.Errorf("err = %s, n = %d\n", err, n)
+		}
+
+		prof.Profile("main_insert_blockchain", time.Now().Sub(start))
 	}
-	prof.Profile("main_insert_blockchain", time.Now().Sub(start))
 
 	// Apply reward
-	config := bcdata.bc.Config()
-	rules := config.Rules(bcdata.bc.CurrentHeader().Number)
-	pset, err := params.NewGovParamSetChainConfig(config)
-	if err != nil {
+	mStaking := staking_impl.NewStakingModule()
+	mReward := reward_impl.NewRewardModule()
+	mGov := gov_impl.NewGovModule()
+	err = errors.Join(
+		mGov.Init(&gov_impl.InitOpts{
+			ChainConfig: bcdata.bc.Config(),
+			ChainKv:     bcdata.db.GetMiscDB(),
+			Chain:       bcdata.bc,
+		}),
+		mReward.Init(&reward_impl.InitOpts{
+			ChainConfig:   bcdata.bc.Config(),
+			Chain:         bcdata.bc,
+			GovModule:     mGov,
+			StakingModule: mStaking, // Not used in "Simple" istanbul policy
+		}),
+	)
+	// Because we have AccountMap instead of StateDB, explicitly call AddBalance here.
+	if spec, err := mReward.GetDeferredReward(b.Header(), b.Transactions(), receipts); err != nil {
 		return err
+	} else {
+		for addr, reward := range spec.Rewards {
+			accountMap.AddBalance(addr, reward)
+		}
 	}
-	start = time.Now()
-	spec, err := reward.CalcDeferredRewardSimple(bcdata.bc.CurrentHeader(), txs, receipts, rules, pset)
-	if err != nil {
-		return err
-	}
-	reward.DistributeBlockReward(accountMap, spec.Rewards)
 	prof.Profile("main_apply_reward", time.Now().Sub(start))
 
 	// Verification with accountMap
@@ -423,6 +521,10 @@ func (bcdata *BCData) GenABlockWithTransactions(accountMap *AccountMap, transact
 	prof.Profile("main_verification", time.Now().Sub(start))
 
 	return nil
+}
+
+func (bcdata *BCData) EnableMiner() {
+	bcdata.isMiner = true
 }
 
 // //////////////////////////////////////////////////////////////////////////////
@@ -459,13 +561,16 @@ func prepareIstanbulExtra(validators []common.Address) ([]byte, error) {
 }
 
 func initBlockChain(db database.DBManager, cacheConfig *blockchain.CacheConfig, coinbaseAddrs []*common.Address, validators []common.Address,
-	genesis *blockchain.Genesis, engine consensus.Engine,
+	genesis *blockchain.Genesis, engine consensus.Engine, config *params.ChainConfig,
 ) (*blockchain.BlockChain, *blockchain.Genesis, error) {
+	if config == nil {
+		return nil, nil, errors.New("config is nil")
+	}
 	extraData, err := prepareIstanbulExtra(validators)
 
 	if genesis == nil {
 		genesis = blockchain.DefaultGenesisBlock()
-		genesis.Config = Forks["Byzantium"]
+		genesis.Config = config.Copy()
 		genesis.ExtraData = extraData
 		genesis.BlockScore = big.NewInt(1)
 		genesis.Config.Governance = params.GetDefaultGovernanceConfig()

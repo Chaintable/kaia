@@ -280,6 +280,11 @@ func (s *PublicBlockChainAPI) IsSenderTxHashIndexingEnabled() bool {
 	return s.b.IsSenderTxHashIndexingEnabled()
 }
 
+// IsConsoleLogEnabled returns if console log is enabled or not.
+func (s *PublicBlockChainAPI) IsConsoleLogEnabled() bool {
+	return s.b.IsConsoleLogEnabled()
+}
+
 // CallArgs represents the arguments for a call.
 type CallArgs struct {
 	From                 common.Address  `json:"from"`
@@ -307,6 +312,14 @@ func (args *CallArgs) InputData() []byte {
 	return nil
 }
 
+func (args *CallArgs) GetAccessList() types.AccessList {
+	if args.AccessList != nil {
+		return *args.AccessList
+	} else {
+		return nil
+	}
+}
+
 func DoCall(ctx context.Context, b Backend, args CallArgs, blockNrOrHash rpc.BlockNumberOrHash, vmCfg vm.Config, timeout time.Duration, globalGasCap *big.Int) (*blockchain.ExecutionResult, uint64, error) {
 	defer func(start time.Time) { logger.Debug("Executing EVM call finished", "runtime", time.Since(start)) }(time.Now())
 
@@ -327,7 +340,7 @@ func DoCall(ctx context.Context, b Backend, args CallArgs, blockNrOrHash rpc.Blo
 	// this makes sure resources are cleaned up.
 	defer cancel()
 
-	intrinsicGas, err := types.IntrinsicGas(args.InputData(), nil, args.To == nil, b.ChainConfig().Rules(header.Number))
+	intrinsicGas, err := types.IntrinsicGas(args.InputData(), args.GetAccessList(), nil, args.To == nil, b.ChainConfig().Rules(header.Number))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -387,7 +400,7 @@ func (s *PublicBlockChainAPI) Call(ctx context.Context, args CallArgs, blockNrOr
 	if rpcGasCap := s.b.RPCGasCap(); rpcGasCap != nil {
 		gasCap = rpcGasCap
 	}
-	result, _, err := DoCall(ctx, s.b, args, blockNrOrHash, vm.Config{ComputationCostLimit: params.OpcodeComputationCostLimitInfinite}, s.b.RPCEVMTimeout(), gasCap)
+	result, _, err := DoCall(ctx, s.b, args, blockNrOrHash, vm.Config{ComputationCostLimit: params.OpcodeComputationCostLimitInfinite, UseConsoleLog: s.b.IsConsoleLogEnabled()}, s.b.RPCEVMTimeout(), gasCap)
 	if err != nil {
 		return nil, err
 	}
@@ -443,7 +456,7 @@ func DoEstimateGas(ctx context.Context, b Backend, args CallArgs, blockNrOrHash 
 		args.Gas = hexutil.Uint64(gas)
 		result, _, err := DoCall(ctx, b, args, blockNrOrHash, vm.Config{ComputationCostLimit: params.OpcodeComputationCostLimitInfinite}, timeout, gasCap)
 		if err != nil {
-			if errors.Is(err, blockchain.ErrIntrinsicGas) {
+			if errors.Is(err, blockchain.ErrIntrinsicGas) || errors.Is(err, blockchain.ErrFloorDataGas) {
 				return true, nil, nil // Special case, raise gas limit
 			}
 			return true, nil, err // Bail out
@@ -552,7 +565,7 @@ func FormatLogs(timeout time.Duration, logs []vm.StructLog) ([]StructLogRes, err
 
 // For kaia_getBlockByNumber, kaia_getBlockByHash, kaia_getBlockWithconsensusInfoByNumber, kaia_getBlockWithconsensusInfoByHash APIs
 // and Kafka chaindatafetcher.
-func RpcOutputBlock(b *types.Block, td *big.Int, inclTx bool, fullTx bool, config *params.ChainConfig) (map[string]interface{}, error) {
+func RpcOutputBlock(b *types.Block, inclTx bool, fullTx bool, config *params.ChainConfig) (map[string]interface{}, error) {
 	head := b.Header() // copies the header once
 	fields := map[string]interface{}{
 		"number":           (*hexutil.Big)(head.Number),
@@ -562,7 +575,6 @@ func RpcOutputBlock(b *types.Block, td *big.Int, inclTx bool, fullTx bool, confi
 		"stateRoot":        head.Root,
 		"reward":           head.Rewardbase,
 		"blockScore":       (*hexutil.Big)(head.BlockScore),
-		"totalBlockScore":  (*hexutil.Big)(td),
 		"extraData":        hexutil.Bytes(head.Extra),
 		"governanceData":   hexutil.Bytes(head.Governance),
 		"voteData":         hexutil.Bytes(head.Vote),
@@ -597,7 +609,7 @@ func RpcOutputBlock(b *types.Block, td *big.Int, inclTx bool, fullTx bool, confi
 	}
 
 	rules := config.Rules(b.Number())
-	if rules.IsEthTxType {
+	if rules.IsMagma {
 		if head.BaseFee == nil {
 			fields["baseFeePerGas"] = (*hexutil.Big)(new(big.Int).SetUint64(params.ZeroBaseFee))
 		} else {
@@ -616,7 +628,7 @@ func RpcOutputBlock(b *types.Block, td *big.Int, inclTx bool, fullTx bool, confi
 // returned. When fullTx is true the returned block contains full transaction details, otherwise it will only contain
 // transaction hashes.
 func (s *PublicBlockChainAPI) rpcOutputBlock(b *types.Block, inclTx bool, fullTx bool) (map[string]interface{}, error) {
-	return RpcOutputBlock(b, s.b.GetTd(b.Hash()), inclTx, fullTx, s.b.ChainConfig())
+	return RpcOutputBlock(b, inclTx, fullTx, s.b.ChainConfig())
 }
 
 func getFrom(tx *types.Transaction) common.Address {
@@ -644,7 +656,7 @@ func newRPCTransaction(header *types.Header, tx *types.Transaction, blockHash co
 	output["from"] = getFrom(tx)
 	output["hash"] = tx.Hash()
 	output["transactionIndex"] = hexutil.Uint(index)
-	if tx.Type() == types.TxTypeEthereumDynamicFee {
+	if tx.Type() == types.TxTypeEthereumDynamicFee || tx.Type() == types.TxTypeEthereumSetCode {
 		if header != nil {
 			output["gasPrice"] = (*hexutil.Big)(tx.EffectiveGasPrice(header, config))
 		} else {
@@ -739,5 +751,5 @@ func (args *CallArgs) ToMessage(globalGasCap uint64, baseFee *big.Int, intrinsic
 	if args.AccessList != nil {
 		accessList = *args.AccessList
 	}
-	return types.NewMessage(addr, args.To, 0, value, gas, gasPrice, args.InputData(), false, intrinsicGas, accessList), nil
+	return types.NewMessage(addr, args.To, 0, value, gas, gasPrice, nil, nil, args.InputData(), false, intrinsicGas, accessList, nil, nil), nil
 }

@@ -13,6 +13,7 @@ import (
 	types "github.com/kaiachain/kaia/blockchain/types"
 	common "github.com/kaiachain/kaia/common"
 	event "github.com/kaiachain/kaia/event"
+	kaiax "github.com/kaiachain/kaia/kaiax"
 )
 
 // MockTxPool is a mock of TxPool interface.
@@ -148,6 +149,22 @@ func (m *MockTxPool) Pending() (map[common.Address]types.Transactions, error) {
 func (mr *MockTxPoolMockRecorder) Pending() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Pending", reflect.TypeOf((*MockTxPool)(nil).Pending))
+}
+
+// RegisterTxPoolModule mocks base method.
+func (m *MockTxPool) RegisterTxPoolModule(arg0 ...kaiax.TxPoolModule) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{}
+	for _, a := range arg0 {
+		varargs = append(varargs, a)
+	}
+	m.ctrl.Call(m, "RegisterTxPoolModule", varargs...)
+}
+
+// RegisterTxPoolModule indicates an expected call of RegisterTxPoolModule.
+func (mr *MockTxPoolMockRecorder) RegisterTxPoolModule(arg0 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegisterTxPoolModule", reflect.TypeOf((*MockTxPool)(nil).RegisterTxPoolModule), arg0...)
 }
 
 // SetGasPrice mocks base method.
