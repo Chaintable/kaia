@@ -85,8 +85,8 @@ const (
 	Common
 
 	// 21~30
-	ConsensusClique
-	ConsensusGxhash
+	ConsensusClique // deprecated
+	ConsensusGxhash // deprecated
 	ConsensusIstanbul
 	ConsensusIstanbulBackend
 	ConsensusIstanbulCore
@@ -137,7 +137,8 @@ const (
 	KaiaxValset
 	KaiaxRandao
 	KaiaxGasless
-	KaiaxBuilder
+	Builder
+	KaiaxAuction
 
 	BlockchainVmOeTracer
 
@@ -176,8 +177,8 @@ var moduleNames = [ModuleNameLen]string{
 	"common",
 
 	// 21~30
-	"consensus/clique",
-	"consensus/gxhash",
+	"consensus/clique", // deprecated
+	"consensus/gxhash", // deprecated
 	"consensus/istanbul",
 	"consensus/istanbul/backend",
 	"consensus/istanbul/core",
@@ -228,8 +229,8 @@ var moduleNames = [ModuleNameLen]string{
 	"kaiax/valset",
 	"kaiax/randao",
 	"kaiax/gasless",
-	"kaiax/builder",
-
 	"blockchain/vm/oetracer",
 	"flatdb",
+	"builder",
+	"kaiax/auction",
 }

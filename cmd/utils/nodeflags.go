@@ -24,6 +24,7 @@ package utils
 
 import (
 	"github.com/kaiachain/kaia/api/debug"
+	"github.com/kaiachain/kaia/kaiax/auction"
 	"github.com/kaiachain/kaia/kaiax/gasless"
 	"github.com/urfave/cli/v2"
 	"github.com/urfave/cli/v2/altsrc"
@@ -226,6 +227,7 @@ var CommonNodeFlags = []cli.Flag{
 	altsrc.NewUint64Flag(TriesInMemoryFlag),
 	altsrc.NewBoolFlag(LivePruningFlag),
 	altsrc.NewUint64Flag(LivePruningRetentionFlag),
+	altsrc.NewBoolFlag(FlatTrieFlag),
 	altsrc.NewIntFlag(CacheTypeFlag),
 	altsrc.NewIntFlag(CacheScaleFlag),
 	altsrc.NewStringFlag(CacheUsageLevelFlag),
@@ -285,6 +287,10 @@ var CommonNodeFlags = []cli.Flag{
 	altsrc.NewIntFlag(gasless.MaxBundleTxsInPendingFlag),
 	altsrc.NewIntFlag(gasless.MaxBundleTxsInQueueFlag),
 	altsrc.NewIntFlag(gasless.BalanceCheckLevelFlag),
+	// kaiax/auction
+	altsrc.NewBoolFlag(auction.DisableFlag),
+	altsrc.NewInt64Flag(auction.MaxBidPoolSizeFlag),
+	altsrc.NewDurationFlag(auction.EDOffsetFlag),
 }
 
 // Common RPC flags
@@ -348,6 +354,7 @@ var KCNFlags = []cli.Flag{
 	altsrc.NewInt64Flag(BlockGenerationIntervalFlag),
 	altsrc.NewDurationFlag(BlockGenerationTimeLimitFlag),
 	altsrc.NewBoolFlag(gasless.DisableFlag),
+	altsrc.NewUint64Flag(VRankLogFrequencyFlag),
 }
 
 var KPNFlags = []cli.Flag{

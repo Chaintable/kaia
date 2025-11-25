@@ -249,7 +249,7 @@ func doOneCall(ctx context.Context, b Backend, arg EthTransactionArgs, header *t
 	return result, nil
 }
 
-func (s *EthereumAPI) MultiCall(ctx context.Context, args []EthTransactionArgs, blockNrOrHash rpc.BlockNumberOrHash, pfastFail, puseParallel, pdisableCache *bool, overrides *EthStateOverride) (resp *MultiCallResp, err error) {
+func (s *EthAPI) MultiCall(ctx context.Context, args []EthTransactionArgs, blockNrOrHash rpc.BlockNumberOrHash, pfastFail, puseParallel, pdisableCache *bool, overrides *EthStateOverride) (resp *MultiCallResp, err error) {
 
 	// maximum calls check
 	if len(args) > multiCallLimit {
@@ -267,7 +267,7 @@ func (s *EthereumAPI) MultiCall(ctx context.Context, args []EthTransactionArgs, 
 	useParallel := setb(puseParallel, true)
 	disableCache := setb(pdisableCache, false)
 
-	bcAPI := s.publicBlockChainAPI.b
+	bcAPI := s.kaiaBlockChainAPI.b
 	gasCap := uint64(0)
 	if rpcGasCap := bcAPI.RPCGasCap(); rpcGasCap != nil {
 		gasCap = rpcGasCap.Uint64()
