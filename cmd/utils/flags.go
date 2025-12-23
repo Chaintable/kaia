@@ -767,7 +767,7 @@ var (
 	VMTraceJsonConfigFlag = &cli.StringFlag{
 		Name:     "vm.tracejsonconfig",
 		Usage:    "Set the JSON configuration for the VM trace",
-		Aliases:  []string{"vm.tracejsonconfig"},
+		Aliases:  []string{},
 		EnvVars:  []string{"KLAYTN_VM_TRACEJSONCONFIG", "KAIA_VM_TRACEJSONCONFIG"},
 		Category: "VIRTUAL MACHINE",
 	}
