@@ -2107,6 +2107,18 @@ func (bc *BlockChain) insertChain(chain types.Blocks) (int, []interface{}, []*ty
 		stateDB.OnLog = bc.tracer.OnLog
 		stateDB.OnCommit = bc.tracer.OnCommit
 
+		// INSERT_YOUR_CODE
+		// To copy the block, create a new Block instance duplicating its data.
+		// This ensures that the original block isn't modified unexpectedly elsewhere.
+		// Use types.CopyBlock if available, or manually create a new block referencing the same header/txs/receipts.
+		// Example (assuming a CopyBlock utility exists):
+		//   copiedBlock := types.CopyBlock(block)
+		// If not, perform a shallow or deep copy by hand as needed:
+		//   copiedHeader := types.CopyHeader(block.Header())
+		//   copiedTxs := make([]*types.Transaction, len(block.Transactions()))
+		//   copy(copiedTxs, block.Transactions())
+		//   copiedBlock := types.NewBlock(copiedHeader, copiedTxs, block.Receipts())
+		types.CopyHeader(block)
 		bc.tracer.OnBlockStart(block)
 		defer bc.tracer.OnBlockEnd(nil)
 		// Process block using the parent state as reference point.
