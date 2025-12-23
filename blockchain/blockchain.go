@@ -2118,7 +2118,6 @@ func (bc *BlockChain) insertChain(chain types.Blocks) (int, []interface{}, []*ty
 		//   copiedTxs := make([]*types.Transaction, len(block.Transactions()))
 		//   copy(copiedTxs, block.Transactions())
 		//   copiedBlock := types.NewBlock(copiedHeader, copiedTxs, block.Receipts())
-		types.CopyHeader(block)
 		bc.tracer.OnBlockStart(block)
 		defer bc.tracer.OnBlockEnd(nil)
 		// Process block using the parent state as reference point.
