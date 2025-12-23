@@ -1263,7 +1263,8 @@ func (s *StateDB) Commit(deleteEmptyObjects bool) (root common.Hash, err error) 
 				codes[common.BytesToHash(obj.CodeHash())] = obj.code
 			}
 			addrHash := crypto.Keccak256Hash(addr.Bytes())
-			abuf, err := rlp.EncodeToBytes(obj.account)
+			serializer := account.NewAccountSerializerWithAccount(obj.account)
+			abuf, err := rlp.EncodeToBytes(serializer)
 			if err != nil {
 				return common.Hash{}, fmt.Errorf("can't encode object at %s: %v", addr.Hex(), err)
 			}

@@ -75,7 +75,7 @@ require (
 )
 
 require (
-	github.com/Chaintable/pipeline v0.0.55-metis-debank-3.0.20251223072052-34ee971303cf
+	github.com/Chaintable/pipeline v0.0.55-metis-debank-3.0.20251223083549-aedf6795b807
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4
 	github.com/cockroachdb/pebble v1.1.5
 	github.com/dop251/goja v0.0.0-20231014103939-873a1496dc8e
