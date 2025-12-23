@@ -2920,8 +2920,36 @@ func convertGenesisAllocToPipeline(alloc GenesisAlloc) pipelinetypes.GenesisAllo
 		logger.Error("Failed to marshal genesis alloc", "err", err)
 		return nil
 	}
+
+	// Transform JSON to convert hex balance strings to decimal strings
+	// The pipeline library expects balance as a decimal string, not a hex string
+	var jsonMap map[string]interface{}
+	if err := json.Unmarshal(jsonData, &jsonMap); err != nil {
+		logger.Error("Failed to unmarshal genesis alloc JSON for transformation", "err", err)
+		return nil
+	}
+
+	// Convert hex balance strings to decimal strings
+	for _, accountData := range jsonMap {
+		if accountMap, ok := accountData.(map[string]interface{}); ok {
+			if balanceStr, ok := accountMap["balance"].(string); ok {
+				// Parse hex string (e.g., "0x0") to big.Int, then convert to decimal string
+				if balance, ok := new(big.Int).SetString(balanceStr, 0); ok {
+					accountMap["balance"] = balance.String()
+				}
+			}
+		}
+	}
+
+	// Marshal back to JSON with decimal strings
+	transformedJSON, err := json.Marshal(jsonMap)
+	if err != nil {
+		logger.Error("Failed to marshal transformed genesis alloc", "err", err)
+		return nil
+	}
+
 	var pipelineAlloc pipelinetypes.GenesisAlloc
-	if err := json.Unmarshal(jsonData, &pipelineAlloc); err != nil {
+	if err := json.Unmarshal(transformedJSON, &pipelineAlloc); err != nil {
 		logger.Error("Failed to unmarshal genesis alloc to pipeline types", "err", err)
 		return nil
 	}
