@@ -45,7 +45,7 @@ jobs:
 
       - name: Build and push image
         run: |
-          DOCKER_BUILDKIT=1 docker build -t ${REGISTRY}/${IMAGE}:${{ matrix.arch }}-${REVISION} -f ${DOCKERFILE} .
+          DOCKER_BUILDKIT=1 docker build --build-arg ACCESS_TOKEN=${{ steps.generate-token.outputs.token }} -t ${REGISTRY}/${IMAGE}:${{ matrix.arch }}-${REVISION} -f ${DOCKERFILE} .
           docker push ${REGISTRY}/${IMAGE}:${{ matrix.arch }}-${REVISION}
           docker run --name dryrun --rm ${REGISTRY}/${IMAGE}:${{ matrix.arch }}-${REVISION} ken version
           docker rmi ${REGISTRY}/${IMAGE}:${{ matrix.arch }}-${REVISION}
