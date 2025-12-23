@@ -294,6 +294,8 @@ func NewBlockChain(db database.DBManager, cacheConfig *CacheConfig, chainConfig 
 			traceConfig = json.RawMessage(vmConfig.VMTraceJsonConfig)
 		}
 		bc.tracer, _ = ptracer.NewPipelineTracer(traceConfig)
+		bc.vmConfig.Debug = true
+		bc.vmConfig.Tracer = bc.tracer
 	}
 
 	var err error
