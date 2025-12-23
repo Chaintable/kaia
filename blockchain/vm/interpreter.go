@@ -55,6 +55,9 @@ type Config struct {
 	// Enables collecting internal transaction data during processing a block
 	EnableInternalTxTracing bool
 
+	// JSON configuration for the VM trace
+	VMTraceJsonConfig string
+
 	// Enables collecting and printing opcode execution time
 	EnableOpDebug bool
 

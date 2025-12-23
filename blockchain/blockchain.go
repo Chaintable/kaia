@@ -23,6 +23,7 @@
 package blockchain
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -35,6 +36,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Chaintable/pipeline/tracer"
+	pipelinetypes "github.com/Chaintable/pipeline/types"
 	"github.com/go-redis/redis/v7"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/kaiachain/kaia/blockchain/state"
@@ -163,6 +166,7 @@ type BlockChain struct {
 	chainConfig  *params.ChainConfig // Chain & network configuration
 	cacheConfig  *CacheConfig        // stateDB caching and trie caching/pruning configuration
 	txTraceStore txtracev2.Store
+	tracer       *tracer.PipelineTracer
 
 	db      database.DBManager // Low level persistent database to store final content in
 	snaps   *snapshot.Tree     // Snapshot tree for fast trie leaf access
@@ -285,6 +289,11 @@ func NewBlockChain(db database.DBManager, cacheConfig *CacheConfig, chainConfig 
 
 	if vmConfig.EnableInternalTxTracing {
 		bc.txTraceStore = txtracev2.NewTraceStore(db)
+		traceConfig := json.RawMessage("{}")
+		if vmConfig.VMTraceJsonConfig != "" {
+			traceConfig = json.RawMessage(vmConfig.VMTraceJsonConfig)
+		}
+		bc.tracer, _ = tracer.NewPipelineTracer(traceConfig)
 	}
 
 	var err error
@@ -369,6 +378,28 @@ func NewBlockChain(db database.DBManager, cacheConfig *CacheConfig, chainConfig 
 		go bc.prefetchTxWorker(i)
 	}
 	logger.Info("prefetchTxWorkers are started", "num", bc.cacheConfig.TrieNodeCacheConfig.NumFetcherPrefetchWorker)
+
+	if bc.tracer != nil && bc.tracer.OnBlockchainInit != nil {
+		bc.tracer.OnBlockchainInit(&params.ChainConfig{
+			ChainID: bc.chainConfig.ChainID,
+		})
+	}
+	logger.Info("Initialised blockchain", "head", bc.CurrentHeader().Number, "hash", bc.CurrentHeader().Hash())
+	if bc.tracer != nil && bc.tracer.OnGenesisBlock != nil {
+		if block := bc.CurrentBlock(); block.Number().Uint64() == 0 {
+			logger.Info("Genesis block is set", "hash", block.Hash())
+			alloc, err := getGenesisState(bc.db, block.Hash())
+			if err != nil {
+				return nil, fmt.Errorf("failed to get genesis state: %w", err)
+			}
+			if alloc == nil {
+				return nil, errors.New("live blockchain tracer requires genesis alloc to be set")
+			}
+			// Convert local GenesisAlloc to pipeline types GenesisAlloc
+			pipelineAlloc := convertGenesisAllocToPipeline(alloc)
+			bc.tracer.OnGenesisBlock(bc.genesisBlock, pipelineAlloc)
+		}
+	}
 
 	// Take ownership of this particular state
 	go bc.update()
@@ -2071,7 +2102,11 @@ func (bc *BlockChain) insertChain(chain types.Blocks) (int, []interface{}, []*ty
 		if err != nil {
 			return i, events, coalescedLogs, err
 		}
+		stateDB.OnLog = bc.tracer.OnLog
+		stateDB.OnCommit = bc.tracer.OnCommit
 
+		bc.tracer.OnBlockStart(block)
+		defer bc.tracer.OnBlockEnd(nil)
 		// Process block using the parent state as reference point.
 		receipts, logs, usedGas, internalTxTraces, procStats, err := bc.processor.Process(block, stateDB, bc.vmConfig)
 		if err != nil {
@@ -2873,6 +2908,22 @@ func GetInternalTxTrace(tracer vm.Tracer) (*vm.InternalTxTrace, error) {
 		return nil, ErrInvalidTracer
 	}
 	return internalTxTrace, nil
+}
+
+// convertGenesisAllocToPipeline converts local GenesisAlloc to pipeline types GenesisAlloc
+func convertGenesisAllocToPipeline(alloc GenesisAlloc) pipelinetypes.GenesisAlloc {
+	// Use JSON as intermediate format for conversion
+	jsonData, err := json.Marshal(alloc)
+	if err != nil {
+		logger.Error("Failed to marshal genesis alloc", "err", err)
+		return nil
+	}
+	var pipelineAlloc pipelinetypes.GenesisAlloc
+	if err := json.Unmarshal(jsonData, &pipelineAlloc); err != nil {
+		logger.Error("Failed to unmarshal genesis alloc to pipeline types", "err", err)
+		return nil
+	}
+	return pipelineAlloc
 }
 
 // CheckBlockChainVersion checks the version of the current database and upgrade if possible.

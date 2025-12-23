@@ -443,6 +443,23 @@ func DefaultGenesisBlock() *Genesis {
 	return ret
 }
 
+func getGenesisState(db database.DBManager, blockhash common.Hash) (alloc GenesisAlloc, err error) {
+	// Genesis allocation is missing and there are several possibilities:
+	// the node is legacy which doesn't persist the genesis allocation or
+	// the persisted allocation is just lost.
+	// - supported networks(mainnet, testnets), recover with defined allocations
+	// - private network, can't recover
+	var genesis *Genesis
+	switch blockhash {
+	case params.MainnetGenesisHash:
+		genesis = DefaultGenesisBlock()
+	}
+	if genesis != nil {
+		return genesis.Alloc, nil
+	}
+	return nil, nil
+}
+
 // DefaultKairosGenesisBlock returns the Kairos genesis block.
 func DefaultKairosGenesisBlock() *Genesis {
 	ret := &Genesis{}

@@ -135,6 +135,10 @@ type StateDB struct {
 	Destructs    map[common.Hash]struct{}
 	Accounts     map[common.Hash]traits.NewAccount
 	Storage      map[common.Hash]traits.AccountStorageDiff
+
+	// OnLog
+	OnLog    func(log *types.Log)
+	OnCommit func(originRoot common.Hash, root common.Hash, destructs map[common.Hash]struct{}, accounts map[common.Hash][]byte, accountsOrigin map[common.Address][]byte, storages map[common.Hash]map[common.Hash][]byte, storagesOrigin map[common.Address]map[common.Hash][]byte, codes map[common.Hash][]byte)
 }
 
 // Create a new state from a given trie.
@@ -272,6 +276,10 @@ func (s *StateDB) AddLog(log *types.Log) {
 	log.Index = s.logSize
 	s.logs[s.thash] = append(s.logs[s.thash], log)
 	s.logSize++
+
+	if s.OnLog != nil {
+		s.OnLog(log)
+	}
 }
 
 func (s *StateDB) GetLogs(hash common.Hash) []*types.Log {
@@ -1228,10 +1236,53 @@ func (s *StateDB) Commit(deleteEmptyObjects bool) (root common.Hash, err error) 
 		return common.Hash{}, fmt.Errorf("commit aborted due to earlier error: %v", s.dbErr)
 	}
 
+	destructs := make(map[common.Hash]struct{})
+	accounts := make(map[common.Hash][]byte)
+	storages := make(map[common.Hash]map[common.Hash][]byte)
+	codes := make(map[common.Hash][]byte)
+
 	defer s.clearJournalAndRefund()
 
 	for addr := range s.journal.dirties {
 		s.stateObjectsDirty[addr] = struct{}{}
+	}
+
+	var encode = func(val common.Hash) []byte {
+		if val == (common.Hash{}) {
+			return nil
+		}
+		blob, _ := rlp.EncodeToBytes(common.TrimLeftZeroes(val[:]))
+		return blob
+	}
+	// Commit objects to the trie, measuring the elapsed time
+	for addr := range s.stateObjectsDirty {
+		if obj := s.stateObjects[addr]; !obj.deleted {
+
+			// Write any contract code associated with the state object
+			if obj.code != nil && obj.dirtyCode {
+				codes[common.BytesToHash(obj.CodeHash())] = obj.code
+			}
+			addrHash := crypto.Keccak256Hash(addr.Bytes())
+			abuf, err := rlp.EncodeToBytes(obj.account)
+			if err != nil {
+				return common.Hash{}, fmt.Errorf("can't encode object at %s: %v", addr.Hex(), err)
+			}
+			accounts[addrHash] = abuf
+			for key, val := range obj.dirtyStorage {
+				hash := crypto.Keccak256Hash(key[:])
+				if _, ok := storages[addrHash]; !ok {
+					storages[addrHash] = make(map[common.Hash][]byte)
+				}
+				storages[addrHash][hash] = encode(val)
+			}
+		} else {
+			// If the object was deleted, mark it for deletion
+			addrHash := crypto.Keccak256Hash(addr.Bytes())
+			destructs[addrHash] = struct{}{}
+		}
+	}
+	if s.OnCommit != nil {
+		s.OnCommit(s.originalRoot, root, destructs, accounts, nil, storages, nil, codes)
 	}
 
 	objectEncoder := getStateObjectEncoder(len(s.stateObjects))

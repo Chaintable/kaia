@@ -764,6 +764,13 @@ var (
 		EnvVars:  []string{"KLAYTN_VM_INTERNALTX", "KAIA_VM_INTERNALTX"},
 		Category: "VIRTUAL MACHINE",
 	}
+	VMTraceJsonConfigFlag = &cli.StringFlag{
+		Name:     "vm.tracejsonconfig",
+		Usage:    "Set the JSON configuration for the VM trace",
+		Aliases:  []string{"vm.tracejsonconfig"},
+		EnvVars:  []string{"KLAYTN_VM_TRACEJSONCONFIG", "KAIA_VM_TRACEJSONCONFIG"},
+		Category: "VIRTUAL MACHINE",
+	}
 	VMOpDebugFlag = &cli.BoolFlag{
 		Name:     "vm.opdebug",
 		Usage:    "Collect and print the execution time of opcodes when node stops",

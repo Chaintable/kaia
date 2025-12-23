@@ -698,6 +698,7 @@ func (kCfg *KaiaConfig) SetKaiaConfig(ctx *cli.Context, stack *node.Node) {
 		}
 	}
 	cfg.EnableInternalTxTracing = ctx.Bool(VMTraceInternalTxFlag.Name)
+	cfg.VMTraceJsonConfig = ctx.String(VMTraceJsonConfigFlag.Name)
 	cfg.EnableOpDebug = ctx.Bool(VMOpDebugFlag.Name)
 
 	cfg.AutoRestartFlag = ctx.Bool(AutoRestartFlag.Name)
