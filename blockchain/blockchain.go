@@ -2920,7 +2920,7 @@ func convertGenesisAllocToPipeline(alloc GenesisAlloc) pipelinetypes.GenesisAllo
 		logger.Error("Failed to marshal genesis alloc", "err", err)
 		return nil
 	}
-	logger.Info("Marshaled genesis alloc to JSON", "jsonLength", len(jsonData), "allocCount", len(alloc))
+	logger.Info("Marshaled genesis alloc to JSON", "jsonLength", len(jsonData), "allocCount", len(alloc), "jsonData", string(jsonData))
 
 	// Transform JSON to convert hex balance strings to decimal strings
 	// The pipeline library expects balance as a decimal string, not a hex string
@@ -2958,7 +2958,7 @@ func convertGenesisAllocToPipeline(alloc GenesisAlloc) pipelinetypes.GenesisAllo
 		logger.Error("Failed to marshal transformed genesis alloc", "err", err)
 		return nil
 	}
-	logger.Info("Marshaled transformed genesis alloc", "jsonLength", len(transformedJSON))
+	logger.Info("Marshaled transformed genesis alloc", "jsonLength", len(transformedJSON), "transformedJSON", string(transformedJSON))
 
 	var pipelineAlloc pipelinetypes.GenesisAlloc
 	if err := json.Unmarshal(transformedJSON, &pipelineAlloc); err != nil {
