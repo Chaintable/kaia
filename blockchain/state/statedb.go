@@ -1282,10 +1282,6 @@ func (s *StateDB) Commit(deleteEmptyObjects bool) (root common.Hash, err error) 
 			destructs[addrHash] = struct{}{}
 		}
 	}
-	if s.OnCommit != nil {
-		s.OnCommit(s.originalRoot, root, destructs, accounts, nil, storages, nil, codes)
-	}
-
 	objectEncoder := getStateObjectEncoder(len(s.stateObjects))
 	var stateObjectsToUpdate []*stateObject
 	// Commit objects to the trie.
@@ -1335,6 +1331,10 @@ func (s *StateDB) Commit(deleteEmptyObjects bool) (root common.Hash, err error) 
 		}
 		return nil
 	})
+
+	if s.OnCommit != nil {
+		s.OnCommit(s.originalRoot, root, destructs, accounts, nil, storages, nil, codes)
+	}
 
 	// If snapshotting is enabled, update the snapshot tree with this new version
 	if s.snap != nil {
