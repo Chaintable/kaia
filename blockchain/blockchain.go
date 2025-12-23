@@ -36,7 +36,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Chaintable/pipeline/tracer"
+	ptracer "github.com/Chaintable/pipeline/tracer"
 	pipelinetypes "github.com/Chaintable/pipeline/types"
 	"github.com/go-redis/redis/v7"
 	lru "github.com/hashicorp/golang-lru"
@@ -166,7 +166,7 @@ type BlockChain struct {
 	chainConfig  *params.ChainConfig // Chain & network configuration
 	cacheConfig  *CacheConfig        // stateDB caching and trie caching/pruning configuration
 	txTraceStore txtracev2.Store
-	tracer       *tracer.PipelineTracer
+	tracer       *ptracer.PipelineTracer
 
 	db      database.DBManager // Low level persistent database to store final content in
 	snaps   *snapshot.Tree     // Snapshot tree for fast trie leaf access
@@ -293,7 +293,7 @@ func NewBlockChain(db database.DBManager, cacheConfig *CacheConfig, chainConfig 
 		if vmConfig.VMTraceJsonConfig != "" {
 			traceConfig = json.RawMessage(vmConfig.VMTraceJsonConfig)
 		}
-		bc.tracer, _ = tracer.NewPipelineTracer(traceConfig)
+		bc.tracer, _ = ptracer.NewPipelineTracer(traceConfig)
 	}
 
 	var err error
@@ -2826,10 +2826,10 @@ func (bc *BlockChain) ApplyTransaction(chainConfig *params.ChainConfig, author *
 	vmenv := vm.NewEVM(blockContext, txContext, statedb, chainConfig, vmConfig)
 	// Assert tracer is txtrace.StructLogger, and fill into
 	// essential info to it.
-	if vmConfig.EnableInternalTxTracing {
-		vmConfig.Debug = true
-		vmConfig.Tracer = txtracev2.NewOeTracer(bc.TxTraceStore(), header.Hash(), header.Number, tx.Hash(), uint64(statedb.TxIndex()))
-	}
+	// if vmConfig.EnableInternalTxTracing {
+	// 	vmConfig.Debug = true
+	// 	vmConfig.Tracer = txtracev2.NewOeTracer(bc.TxTraceStore(), header.Hash(), header.Number, tx.Hash(), uint64(statedb.TxIndex()))
+	// }
 
 	// change evm and msg for eest
 	if bc != nil {
@@ -2903,6 +2903,8 @@ func GetInternalTxTrace(tracer vm.Tracer) (*vm.InternalTxTrace, error) {
 	case *txtracev2.OeTracer:
 		internalTxTrace = nil
 		err = nil
+	case *ptracer.PipelineTracer:
+		return nil, nil
 	default:
 		logger.Error("To trace internal transactions, VM tracer type should be vm.InternalTxTracer", "actualType", reflect.TypeOf(tracer).String())
 		return nil, ErrInvalidTracer
