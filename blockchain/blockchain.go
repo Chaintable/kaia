@@ -2876,6 +2876,7 @@ func (bc *BlockChain) ApplyTransaction(chainConfig *params.ChainConfig, author *
 	// Set the receipt logs and create a bloom for filtering
 	receipt.Logs = statedb.GetLogs(tx.Hash())
 	receipt.Bloom = types.CreateBloom(types.Receipts{receipt})
+	receipt.TranscationIndex = uint64(statedb.TxIndex())
 
 	// Finalize trace logger result and save to underlying database if necessary.
 	if vmConfig.Tracer != nil {
