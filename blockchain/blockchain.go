@@ -2914,62 +2914,51 @@ func GetInternalTxTrace(tracer vm.Tracer) (*vm.InternalTxTrace, error) {
 
 // convertGenesisAllocToPipeline converts local GenesisAlloc to pipeline types GenesisAlloc
 func convertGenesisAllocToPipeline(alloc GenesisAlloc) pipelinetypes.GenesisAlloc {
-	// Use JSON as intermediate format for conversion
-	jsonData, err := json.Marshal(alloc)
-	if err != nil {
-		logger.Error("Failed to marshal genesis alloc", "err", err)
+	if alloc == nil {
+		logger.Warn("Genesis alloc is nil")
 		return nil
 	}
-	logger.Info("Marshaled genesis alloc to JSON", "jsonLength", len(jsonData), "allocCount", len(alloc), "jsonData", string(jsonData))
 
-	// Transform JSON to convert hex balance strings to decimal strings
-	// The pipeline library expects balance as a decimal string, not a hex string
-	var jsonMap map[string]interface{}
-	if err := json.Unmarshal(jsonData, &jsonMap); err != nil {
-		logger.Error("Failed to unmarshal genesis alloc JSON for transformation", "err", err)
-		return nil
-	}
-	logger.Info("Unmarshaled genesis alloc JSON for transformation", "accountCount", len(jsonMap))
+	logger.Info("Converting genesis alloc to pipeline types", "allocCount", len(alloc))
 
-	// Convert hex balance strings to decimal strings
+	// Create pipeline alloc map
+	pipelineAlloc := make(pipelinetypes.GenesisAlloc, len(alloc))
 	convertedCount := 0
-	for addr, accountData := range jsonMap {
-		if accountMap, ok := accountData.(map[string]interface{}); ok {
-			if balanceStr, ok := accountMap["balance"].(string); ok {
-				logger.Info("Converting balance", "address", addr, "balanceHex", balanceStr)
-				// Parse hex string (e.g., "0x0") to big.Int, then convert to decimal string
-				if balance, ok := new(big.Int).SetString(balanceStr, 0); ok {
-					accountMap["balance"] = balance.String()
-					logger.Info("Converted balance to decimal string", "address", addr, "balance", balance.String())
-					convertedCount++
-				} else {
-					logger.Warn("Failed to parse balance string", "address", addr, "balance", balanceStr)
-				}
-			} else {
-				logger.Info("Balance is not a string, skipping", "address", addr, "balanceType", fmt.Sprintf("%T", accountMap["balance"]))
+
+	// Directly convert each account from local type to pipeline type
+	for addr, account := range alloc {
+		logger.Info("Converting account", "address", addr.Hex(), "balance", account.Balance.String())
+
+		// Create new pipeline account and copy values directly
+		pipelineAccount := pipelinetypes.GenesisAccount{
+			Balance: new(big.Int).Set(account.Balance), // Copy balance directly
+		}
+
+		// Copy code if present
+		if len(account.Code) > 0 {
+			pipelineAccount.Code = make([]byte, len(account.Code))
+			copy(pipelineAccount.Code, account.Code)
+		}
+
+		// Copy storage if present (pipeline uses same type: map[common.Hash]common.Hash)
+		if len(account.Storage) > 0 {
+			pipelineAccount.Storage = make(map[common.Hash]common.Hash, len(account.Storage))
+			for k, v := range account.Storage {
+				pipelineAccount.Storage[k] = v
 			}
 		}
-	}
-	logger.Info("Converted balances", "count", convertedCount)
 
-	// Marshal back to JSON with decimal strings
-	transformedJSON, err := json.Marshal(jsonMap)
-	if err != nil {
-		logger.Error("Failed to marshal transformed genesis alloc", "err", err)
-		return nil
-	}
-	logger.Info("Marshaled transformed genesis alloc", "jsonLength", len(transformedJSON), "transformedJSON", string(transformedJSON))
+		// Copy nonce
+		pipelineAccount.Nonce = account.Nonce
 
-	var pipelineAlloc pipelinetypes.GenesisAlloc
-	if err := json.Unmarshal(transformedJSON, &pipelineAlloc); err != nil {
-		logger.Error("Failed to unmarshal genesis alloc to pipeline types", "err", err)
-		// Log a sample of the transformed JSON for debugging
-		if len(transformedJSON) > 0 && len(transformedJSON) < 1000 {
-			logger.Error("Transformed JSON sample", "json", string(transformedJSON))
-		}
-		return nil
+		// Use address as key (pipeline uses common.Address as key)
+		pipelineAlloc[addr] = pipelineAccount
+		convertedCount++
+
+		logger.Info("Converted account", "address", addr.Hex(), "balance", pipelineAccount.Balance.String(), "nonce", pipelineAccount.Nonce)
 	}
-	logger.Info("Successfully converted genesis alloc to pipeline types", "allocCount", len(pipelineAlloc))
+
+	logger.Info("Successfully converted genesis alloc to pipeline types", "allocCount", len(pipelineAlloc), "convertedCount", convertedCount)
 	return pipelineAlloc
 }
 
