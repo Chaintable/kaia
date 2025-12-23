@@ -28,8 +28,8 @@ github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03
 github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c h1:pxW6RcqyfI9/kWtOwnv/G+AzdKuy2ZrqINhenH4HyNs=
 github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
-github.com/Chaintable/pipeline v0.0.55-metis-debank-3.0.20251223124840-8231c4f59cdc h1:5dzuW1iMiIYMrk9IyBlg1pO+rh5o2TNZY1jI/K/pwak=
-github.com/Chaintable/pipeline v0.0.55-metis-debank-3.0.20251223124840-8231c4f59cdc/go.mod h1:RkYW9z7V95z7q8zpxiNeAG7FRiPPjzeMbR5IdAhKgfE=
+github.com/Chaintable/pipeline v0.0.55-metis-debank-3.0.20251223133844-a3b8e04e9df2 h1:5DJQscVXFDhPpQ80Ofacs0J5L/ISmlBYMzC7CykYmOI=
+github.com/Chaintable/pipeline v0.0.55-metis-debank-3.0.20251223133844-a3b8e04e9df2/go.mod h1:RkYW9z7V95z7q8zpxiNeAG7FRiPPjzeMbR5IdAhKgfE=
 github.com/DATA-DOG/go-sqlmock v1.3.3/go.mod h1:f/Ixk793poVmq4qj/V1dPUg2JEAKC73Q5eFN3EC/SaM=
 github.com/DataDog/datadog-agent/pkg/obfuscate v0.0.0-20211129110424-6491aa3bf583 h1:3nVO1nQyh64IUY6BPZUpMYMZ738Pu+LsMt3E0eqqIYw=
 github.com/DataDog/datadog-agent/pkg/obfuscate v0.0.0-20211129110424-6491aa3bf583/go.mod h1:EP9f4GqaDJyP1F5jTNMtzdIpw3JpNs3rMSJOnYywCiw=
