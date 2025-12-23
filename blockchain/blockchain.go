@@ -2920,6 +2920,7 @@ func convertGenesisAllocToPipeline(alloc GenesisAlloc) pipelinetypes.GenesisAllo
 		logger.Error("Failed to marshal genesis alloc", "err", err)
 		return nil
 	}
+	logger.Info("Marshaled genesis alloc to JSON", "jsonLength", len(jsonData), "allocCount", len(alloc))
 
 	// Transform JSON to convert hex balance strings to decimal strings
 	// The pipeline library expects balance as a decimal string, not a hex string
@@ -2928,18 +2929,28 @@ func convertGenesisAllocToPipeline(alloc GenesisAlloc) pipelinetypes.GenesisAllo
 		logger.Error("Failed to unmarshal genesis alloc JSON for transformation", "err", err)
 		return nil
 	}
+	logger.Info("Unmarshaled genesis alloc JSON for transformation", "accountCount", len(jsonMap))
 
 	// Convert hex balance strings to decimal strings
-	for _, accountData := range jsonMap {
+	convertedCount := 0
+	for addr, accountData := range jsonMap {
 		if accountMap, ok := accountData.(map[string]interface{}); ok {
 			if balanceStr, ok := accountMap["balance"].(string); ok {
+				logger.Info("Converting balance", "address", addr, "balanceHex", balanceStr)
 				// Parse hex string (e.g., "0x0") to big.Int, then convert to decimal string
 				if balance, ok := new(big.Int).SetString(balanceStr, 0); ok {
 					accountMap["balance"] = balance.String()
+					logger.Info("Converted balance to decimal string", "address", addr, "balance", balance.String())
+					convertedCount++
+				} else {
+					logger.Warn("Failed to parse balance string", "address", addr, "balance", balanceStr)
 				}
+			} else {
+				logger.Info("Balance is not a string, skipping", "address", addr, "balanceType", fmt.Sprintf("%T", accountMap["balance"]))
 			}
 		}
 	}
+	logger.Info("Converted balances", "count", convertedCount)
 
 	// Marshal back to JSON with decimal strings
 	transformedJSON, err := json.Marshal(jsonMap)
@@ -2947,12 +2958,18 @@ func convertGenesisAllocToPipeline(alloc GenesisAlloc) pipelinetypes.GenesisAllo
 		logger.Error("Failed to marshal transformed genesis alloc", "err", err)
 		return nil
 	}
+	logger.Info("Marshaled transformed genesis alloc", "jsonLength", len(transformedJSON))
 
 	var pipelineAlloc pipelinetypes.GenesisAlloc
 	if err := json.Unmarshal(transformedJSON, &pipelineAlloc); err != nil {
 		logger.Error("Failed to unmarshal genesis alloc to pipeline types", "err", err)
+		// Log a sample of the transformed JSON for debugging
+		if len(transformedJSON) > 0 && len(transformedJSON) < 1000 {
+			logger.Error("Transformed JSON sample", "json", string(transformedJSON))
+		}
 		return nil
 	}
+	logger.Info("Successfully converted genesis alloc to pipeline types", "allocCount", len(pipelineAlloc))
 	return pipelineAlloc
 }
 
