@@ -266,6 +266,7 @@ var FlagGroups = []FlagGroup{
 			VMEnableDebugFlag,
 			VMLogTargetFlag,
 			VMTraceInternalTxFlag,
+			VMTraceJsonConfigFlag,
 			VMOpDebugFlag,
 		},
 	},
