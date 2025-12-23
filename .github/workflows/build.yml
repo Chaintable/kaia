@@ -28,6 +28,7 @@ jobs:
           echo "REVISION=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
           echo "COMMIT=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
           echo "BRANCH=${GITHUB_REF##*/}" >> $GITHUB_ENV
+
       - name: Build and push image
         run: |
           DOCKER_BUILDKIT=1 docker build -t ${REGISTRY}/${IMAGE}:${{ matrix.arch }}-${REVISION} -f ${DOCKERFILE} .
