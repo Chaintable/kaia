@@ -31,7 +31,6 @@ import (
 	"github.com/kaiachain/kaia/blockchain"
 	"github.com/kaiachain/kaia/blockchain/types"
 	"github.com/kaiachain/kaia/cmd/utils"
-	"github.com/kaiachain/kaia/flat-state-history/flatdb"
 	headergov_impl "github.com/kaiachain/kaia/kaiax/gov/headergov/impl"
 	"github.com/kaiachain/kaia/log"
 	"github.com/kaiachain/kaia/params"
@@ -134,13 +133,7 @@ func initGenesis(ctx *cli.Context) error {
 	params.SetProposerUpdateInterval(genesis.Config.Governance.Reward.ProposerUpdateInterval)
 
 	// Open an initialise both full and light databases
-	stack, cfg := MakeFullNode(ctx)
-	if cfg.CN.StateDiffDir != "" {
-		err = flatdb.Init(cfg.CN.StateDiffDir, 512, 32, false)
-		if err != nil {
-			logger.Crit("Failed to init flatdb", "err", err)
-		}
-	}
+	stack, _ := MakeFullNode(ctx)
 	parallelDBWrite := !ctx.Bool(utils.NoParallelDBWriteFlag.Name)
 	singleDB := ctx.Bool(utils.SingleDBFlag.Name)
 	numStateTrieShards := ctx.Uint(utils.NumStateTrieShardsFlag.Name)

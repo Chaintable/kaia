@@ -467,5 +467,5 @@ func (hc *HeaderChain) StateAt(root common.Hash) (*state.StateDB, error) {
 }
 
 func (bc *HeaderChain) StateAtUseFlat(root common.Hash, blockNumber uint64) (*state.StateDB, error) {
-	return nil, errors.New("not support stateat useflat for HeaderChain")
+	return nil, errors.New("StateAtUseFlat is no longer supported")
 }

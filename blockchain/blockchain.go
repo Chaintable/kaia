@@ -51,7 +51,6 @@ import (
 	"github.com/kaiachain/kaia/consensus"
 	"github.com/kaiachain/kaia/crypto"
 	"github.com/kaiachain/kaia/event"
-	"github.com/kaiachain/kaia/flat-state-history/flatdb"
 	"github.com/kaiachain/kaia/fork"
 	"github.com/kaiachain/kaia/kaiax"
 	"github.com/kaiachain/kaia/log"
@@ -788,8 +787,9 @@ func (bc *BlockChain) StateAt(root common.Hash) (*state.StateDB, error) {
 	return state.New(root, bc.stateCache, bc.snaps, nil)
 }
 
+// StateAtUseFlat is no longer supported (flat-state-history has been removed)
 func (bc *BlockChain) StateAtUseFlat(root common.Hash, blockNumber uint64) (*state.StateDB, error) {
-	return state.NewWithFlatDB(root, bc.stateCache, blockNumber, nil)
+	return nil, errors.New("StateAtUseFlat is no longer supported")
 }
 
 // PrunableStateAt returns a new mutable state based on a particular point in time.
@@ -1176,10 +1176,6 @@ func (bc *BlockChain) Stop() {
 
 	if bc.vmConfig.EnableOpDebug {
 		vm.PrintOpCodeExecTime()
-	}
-
-	if err := flatdb.BeforeClose(); err != nil {
-		logger.Error("Failed to close flat database", "err", err)
 	}
 
 	logger.Info("Blockchain manager stopped")

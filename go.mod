@@ -83,7 +83,6 @@ require (
 	github.com/erigontech/secp256k1 v1.2.0
 	github.com/ethereum/go-ethereum v1.13.15
 	github.com/google/uuid v1.6.0
-	github.com/kaiachain/kaia/flat-state-history v0.0.0-00010101000000-000000000000
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/satori/go.uuid v1.2.0
 	github.com/tyler-smith/go-bip32 v1.0.0
@@ -232,5 +231,3 @@ require (
 	gotest.tools/v3 v3.5.0 // indirect
 	inet.af/netaddr v0.0.0-20220617031823-097006376321 // indirect
 )
-
-replace github.com/kaiachain/kaia/flat-state-history => ./flat-state-history
