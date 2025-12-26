@@ -32,13 +32,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/holiman/uint256"
 	"github.com/kaiachain/kaia/blockchain/types/account"
 	"github.com/kaiachain/kaia/blockchain/types/accountkey"
 	"github.com/kaiachain/kaia/common"
 	"github.com/kaiachain/kaia/crypto"
-	"github.com/kaiachain/kaia/flat-state-history/traits"
 	"github.com/kaiachain/kaia/kerrors"
 	"github.com/kaiachain/kaia/rlp"
 )
@@ -242,19 +239,6 @@ func (s *stateObject) GetCommittedState(db Database, key common.Hash) common.Has
 		enc, err = s.db.snap.Storage(s.addrHash, crypto.Keccak256Hash(key.Bytes()))
 	}
 
-	if s.db.flatDBReader != nil {
-		if _, destructed := s.db.Destructs[s.addrHash]; destructed {
-			return common.Hash{}
-		}
-		value, err := s.db.flatDBReader.Storage(s.addrHash, crypto.Keccak256Hash(key.Bytes()))
-		if err != nil {
-			s.setError(err)
-			return common.Hash{}
-		}
-		s.originStorage[key] = value
-		return value
-	}
-
 	// If the snapshot is unavailable or reading from it fails, load from the database.
 	if s.db.snap == nil || err != nil {
 		if EnabledExpensive {
@@ -391,32 +375,6 @@ func (s *stateObject) updateStorageTrie(db Database) Trie {
 			}
 			storage[crypto.Keccak256Hash(key[:])] = v // v will be nil if it's deleted
 		}
-		value := uint256.NewInt(0)
-		hashKey := common.Hash(crypto.Keccak256([]byte(key[:])))
-		if len(v) > 0 {
-			_, content, _, err := rlp.Split(v)
-			if err != nil {
-				log.Error("Failed to split storage", "err", err)
-			}
-			value = uint256.NewInt(0).SetBytes(content)
-		}
-		storageDiff := s.db.Storage[s.addrHash]
-		storageDiff.Address = s.addrHash
-		find := false
-		for i, v := range storageDiff.Values {
-			if v.Index == hashKey {
-				storageDiff.Values[i].Value = value.ToBig()
-				find = true
-				break
-			}
-		}
-		if !find {
-			storageDiff.Values = append(storageDiff.Values, traits.IndexValuePair{
-				Index: hashKey,
-				Value: value.ToBig(),
-			})
-		}
-		s.db.Storage[s.addrHash] = storageDiff
 	}
 	return tr
 }

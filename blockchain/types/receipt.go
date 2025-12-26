@@ -100,9 +100,10 @@ type Receipt struct {
 	Logs   []*Log `json:"logs"              gencodec:"required"`
 
 	// Implementation fields (don't reorder!)
-	TxHash          common.Hash    `json:"transactionHash" gencodec:"required"`
-	ContractAddress common.Address `json:"contractAddress"`
-	GasUsed         uint64         `json:"gasUsed" gencodec:"required"`
+	TxHash           common.Hash    `json:"transactionHash" gencodec:"required"`
+	ContractAddress  common.Address `json:"contractAddress"`
+	GasUsed          uint64         `json:"gasUsed" gencodec:"required"`
+	TranscationIndex uint64         `json:"transcationIndex" gencodec:"required"`
 }
 
 type receiptMarshaling struct {

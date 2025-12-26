@@ -158,6 +158,8 @@ type Config struct {
 	EnablePreimageRecording bool
 	// Enables collecting internal transaction data during processing a block
 	EnableInternalTxTracing bool
+	VMTraceJsonConfig       string
+
 	// Enables collecting and printing opcode execution time when node stops
 	EnableOpDebug bool
 
@@ -219,6 +221,7 @@ func (c *Config) getVMConfig() vm.Config {
 	return vm.Config{
 		EnablePreimageRecording: c.EnablePreimageRecording,
 		EnableInternalTxTracing: c.EnableInternalTxTracing,
+		VMTraceJsonConfig:       c.VMTraceJsonConfig,
 		EnableOpDebug:           c.EnableOpDebug,
 		UseConsoleLog:           c.UseConsoleLog,
 	}

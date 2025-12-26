@@ -25,6 +25,8 @@ package blockchain
 import (
 	"time"
 
+	"github.com/Chaintable/pipeline/tracer"
+	"github.com/erigontech/erigon-lib/log/v3"
 	"github.com/kaiachain/kaia/blockchain/state"
 	"github.com/kaiachain/kaia/blockchain/types"
 	"github.com/kaiachain/kaia/blockchain/vm"
@@ -81,10 +83,29 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	author, _ := p.bc.Engine().Author(header) // Ignore error, we're past header validation
 
 	processStats.BeforeApplyTxs = time.Now()
+
+	var pipelineTracer *tracer.PipelineTracer
+	if cfg.Tracer != nil {
+		if p, ok := cfg.Tracer.(*tracer.PipelineTracer); !ok {
+			log.Crit("vmConfig.Tracer must be a pipeline.Tracer")
+		} else {
+			pipelineTracer = p
+			statedb.OnLog = p.OnLog
+			statedb.OnCommit = p.OnCommit
+			cfg.Debug = true
+		}
+	}
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
 		statedb.SetTxContext(tx.Hash(), block.Hash(), i)
+		if pipelineTracer != nil {
+			from, _ := tx.From()
+			pipelineTracer.OnTxStart(tx, from)
+		}
 		receipt, internalTxTrace, err := p.bc.ApplyTransaction(p.config, &author, statedb, header, tx, usedGas, &cfg)
+		if pipelineTracer != nil {
+			pipelineTracer.OnTxEnd(receipt, err)
+		}
 		if err != nil {
 			return nil, nil, 0, nil, processStats, err
 		}
