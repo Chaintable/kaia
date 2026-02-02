@@ -218,6 +218,10 @@ func (context *chainContext) StateAt(root common.Hash) (*state.StateDB, error) {
 	return nil, errors.New("not implemented")
 }
 
+func (context *chainContext) StateAtUseFlat(root common.Hash, blockNumber uint64) (*state.StateDB, error) {
+	return nil, errors.New("not implemented")
+}
+
 // chainContext constructs the context reader which is used by the evm for reading
 // the necessary chain context.
 func newChainContext(ctx context.Context, backend Backend) consensus.ChainReader {
@@ -392,7 +396,6 @@ func (api *CommonAPI) traceChain(start, end *types.Block, config *TraceConfig, n
 	)
 	for th := 0; th < threads; th++ {
 		pend.Go(func() {
-
 			// Fetch and execute the block trace tasks
 			for task := range tasks {
 				signer := types.MakeSigner(api.backend.ChainConfig(), task.block.Number())
@@ -706,7 +709,6 @@ func (api *CommonAPI) traceBlock(ctx context.Context, block *types.Block, config
 	}
 	for th := 0; th < threads; th++ {
 		pend.Go(func() {
-
 			// Fetch and execute the next transaction trace tasks
 			for task := range jobs {
 				msg, err := txs[task.index].AsMessageWithAccountKeyPicker(signer, task.statedb, block.NumberU64())

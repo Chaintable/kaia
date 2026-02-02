@@ -1263,9 +1263,5 @@ func (tx *Transaction) IsValueTransfer() bool {
 }
 
 func (tx *Transaction) IsEmptyData() bool {
-	tp, ok := tx.data.(TxInternalDataPayload)
-	if !ok {
-		return true
-	}
-	return len(tp.GetPayload()) == 0
+	return len(tx.data.GetData()) == 0
 }
