@@ -192,12 +192,6 @@ func NewEVM(blockCtx BlockContext, txCtx TxContext, statedb StateDB, chainConfig
 		vmConfig.RunningEVM <- evm
 	}
 
-	// If internal transaction tracing is enabled, creates a tracer for a transaction
-	// if vmConfig.EnableInternalTxTracing {
-	// 	vmConfig.Debug = true
-	// 	vmConfig.Tracer = NewCallTracer()
-	// }
-
 	evm.interpreter = NewEVMInterpreter(evm)
 
 	return evm
