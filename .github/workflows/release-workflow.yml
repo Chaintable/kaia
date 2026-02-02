@@ -1,0 +1,301 @@
+name: Release Workflow
+
+on:
+  push:
+    tags:
+      # Handles both RC versions (v*.*.*-*) and Major versions (v*.*.*)
+      - 'v*.*.*'
+
+jobs:
+  tag-verify:
+    runs-on: ubuntu-latest
+    permissions:
+        contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify tag and file version match
+        run: |
+          echo "tag version is $GITHUB_REF_NAME"
+          KAIA_VERSION=$(go run build/rpm/main.go version)
+          echo "version on version.go $KAIA_VERSION"
+          if [ "$KAIA_VERSION" == "${GITHUB_REF_NAME%-*}" ]; then
+              echo "verification pass"
+          else
+              echo "It's not same version."
+              exit 1
+          fi
+      - name: Check tag is matching pattern
+        if: ${{ contains(github.ref_name, '-rc.') }}
+        run: |
+          if [[ ${{ github.event.ref }} =~ ^refs/tags/^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "match=true" >> "$GITHUB_OUTPUT"
+            echo "Tag is good"
+          fi
+
+  tagger-verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Verify tagger
+        if: ${{ !contains(github.ref_name, '-rc.') }}
+        run: |
+          TAGGER=$(git for-each-ref --format='%(tagger)' refs/tags/${{ github.ref_name }} | sed 's/ .*//')
+          if [ "$TAGGER" == 'github-actions-kaia' ]; then
+            echo "Pass! Tagger is github-actions-kaia"
+          else
+            echo "only github-actions-kaia can tagging major version: current tagger is $TAGGER"
+            exit 1
+          fi
+         
+  packaging-and-upload:
+    needs: [tag-verify, tagger-verify]
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - name: rpm-linux-amd64
+            runner: ubuntu-latest
+            container: kaiachain/circleci-rpmbuild:1.25.3-gcc11
+          - name: rpm-linux-arm64
+            runner: ubuntu-22.04-arm
+            container: kaiachain/circleci-rpmbuild:1.25.3-gcc11-arm
+          - name: rpm-linux-amd64-el7
+            runner: ubuntu-latest
+            container: kaiachain/circleci-rpmbuild:1.25.3-gcc7
+          - name: rpm-linux-arm64-el7
+            runner: ubuntu-22.04-arm
+            container: kaiachain/circleci-rpmbuild:1.25.3-gcc7-arm
+          - name: tar-linux-amd64
+            runner: ubuntu-latest
+            container: kaiachain/build_base:go1.25.3-solc0.8.13-ubuntu-22.04
+          - name: tar-linux-arm64
+            runner: ubuntu-22.04-arm
+            container: kaiachain/build_base:go1.25.3-solc0.8.13-ubuntu-22.04-arm
+          - name: tar-darwin-arm64
+            runner: macos-14
+    name: ${{ matrix.name }}-packaging-and-upload
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    env:
+      GOFLAGS: "-buildvcs=false"
+    steps:
+      - name: Install dependencies
+        if: ${{ matrix.name == 'tar-darwin-arm64' }}
+        run: |
+          # Install dependencies for macOS ARM64
+          brew install awscli
+          curl -O https://dl.google.com/go/go1.23.7.darwin-arm64.tar.gz
+          sudo tar -C /usr/local -xzf go1.23.7.darwin-arm64.tar.gz
+          echo "/usr/local/go/bin" >> $GITHUB_PATH
+          echo "GOPATH=$HOME/go" >> $GITHUB_ENV
+      - name: Checkout
+        run: |
+          git config --global --add safe.directory '*'
+          git init
+          git remote add origin https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+          git fetch origin ${{ github.sha }} --depth=1
+          git checkout FETCH_HEAD
+      - name: Set environment variables
+        run: |
+          PACKAGE_NAME=${{ matrix.name }}
+          echo "PACKAGE_TYPE=$(echo $PACKAGE_NAME | cut -c1-3)" >> $GITHUB_ENV
+          echo "OS_NETWORK=$(echo $PACKAGE_NAME | cut -c5- | sed 's/-el7$//')" >> $GITHUB_ENV
+          echo "IS_RC_VERSION=$(echo $GITHUB_REF_NAME | grep -q 'rc' && echo true || echo false)" >> $GITHUB_ENV
+      - name: Set version
+        shell: bash
+        run: |
+          if [[ $IS_RC_VERSION == "true" ]]; then
+            rc_num=$(echo $GITHUB_REF_NAME | cut -d '-' -f 2)
+            sed 's/%d.%d.%d/%d.%d.%d~'$rc_num'/' params/version.go > params/version.go.tmp
+            mv params/version.go.tmp params/version.go
+          fi
+          echo "KAIA_VERSION=$(go run build/rpm/main.go version)" >> $GITHUB_ENV
+      - name: Build binaries
+        run: make all
+      - name: Build packages
+        shell: bash
+        run: |
+          if [[ $PACKAGE_TYPE == "rpm" ]]; then
+            OS_NETWORK=""
+            export GOPATH=/go
+            mkdir -p /tmp/go-build-cache
+            mkdir -p /tmp/go-mod-cache
+            mkdir -p dist-rpms
+            export GOCACHE=/tmp/go-build-cache
+            export GOMODCACHE=/tmp/go-mod-cache
+            export PLATFORM_SUFFIX=$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)
+          fi
+          for item in kcn kpn ken kscn kspn ksen kgen kbn homi kcn-kairos kpn-kairos ken-kairos; do
+            KAIROS=""
+            B=""
+            if [[ $item == *-kairos ]]; then
+              item="${item%-kairos}"
+              KAIROS="-kairos"
+              B="-b" 
+            fi
+            ./build/package-$PACKAGE_TYPE.sh $B $OS_NETWORK $item
+            if [[ $PACKAGE_TYPE == "rpm" ]]; then
+              mv $item-$PLATFORM_SUFFIX/rpmbuild/RPMS/$(uname -m)/*.rpm dist-rpms/
+              rm -rf $item-$PLATFORM_SUFFIX
+            fi
+          done
+      - name: Upload packages to S3
+        shell: bash
+        run: |
+          OIDC_TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | \
+            grep -o '"value":"[^"]*"' | cut -d'"' -f4)
+          
+          eval $(aws sts assume-role-with-web-identity \
+            --role-arn ${{ secrets.AWS_IAM_ROLE_ARN }} \
+            --role-session-name SessionForKaiaActions \
+            --web-identity-token "$OIDC_TOKEN" \
+            --output text \
+            --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' | \
+            awk '{printf "export AWS_ACCESS_KEY_ID=%s\nexport AWS_SECRET_ACCESS_KEY=%s\nexport AWS_SESSION_TOKEN=%s\n", $1, $2, $3}')
+          export AWS_REGION=${{ secrets.AWS_REGION }}
+
+          RHEL_VERSION="9-stream"
+          if [[ "${{ matrix.name }}" == *"el7"* ]]; then
+            RHEL_VERSION="7"
+          fi
+          if [[ $PACKAGE_TYPE == "rpm" ]]; then
+            aws s3 cp dist-rpms s3://${{ secrets.FRONTEND_BUCKET }}/packages/kaia/$KAIA_VERSION/ --recursive
+            if [[ $IS_RC_VERSION == "false" ]]; then
+              aws s3 cp dist-rpms s3://${{ secrets.FRONTEND_BUCKET }}/packages/rhel/$RHEL_VERSION/kaia/ --recursive
+            fi
+          else
+            aws s3 cp packages s3://${{ secrets.FRONTEND_BUCKET }}/packages/kaia/$KAIA_VERSION/ --recursive
+          fi
+
+  # ============================================================================
+  # RC VERSION ONLY JOBS
+  # ============================================================================
+  
+  # RC-only: Create release PR
+  release-pr:
+    if: ${{ contains(github.ref_name, '-rc.') }}
+    needs: [packaging-and-upload]
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Set release environment variable
+        run: |
+          TAG_NAME="${{ github.ref_name }}"
+          VERSION_NAME="${TAG_NAME%-*}"          
+          echo "RELEASE_BRANCH=release/$VERSION_NAME" >> $GITHUB_ENV
+
+      - name: Create or update release branch
+        run: |
+          if git ls-remote --heads origin "${RELEASE_BRANCH}" | grep -q "${RELEASE_BRANCH}"; then
+            # update release branch to tag commit
+            git checkout -B "${RELEASE_BRANCH}" "${{ github.ref_name }}"
+          else
+            # create release branch
+            git checkout -b "${RELEASE_BRANCH}" "${{ github.ref_name }}"
+          fi
+          git push origin "${RELEASE_BRANCH}" --force
+          echo "EXISTING_PR=$(gh pr list --head "${RELEASE_BRANCH}" --base main --state open --json number --jq '.[0].number')" >> $GITHUB_ENV
+    
+      - name: Create PR via gh
+        if: ${{ env.EXISTING_PR == '' }}
+        run: |
+          gh pr create \
+            --head "${{ env.RELEASE_BRANCH }}" \
+            --base main \
+            --title "[Main] ${{ env.RELEASE_BRANCH }} QA Signoff" \
+            --body-file - <<-EOF
+            [Main] ${{ env.RELEASE_BRANCH }} QA Sign-off
+
+            This PR is automatically created by CI to release a new official version of ${{ github.repository }}.
+            When this PR is approved by the QA team, a new version will be released.
+            EOF
+
+  # ============================================================================
+  # MAJOR VERSION ONLY JOBS
+  # ============================================================================
+  
+  # Major-only: Build and push Docker image
+  docker:
+    if: ${{ !contains(github.ref_name, '-rc.') }}
+    needs: [packaging-and-upload]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            kaiachain/kaia:${{ github.ref == 'refs/heads/dev' && 'dev' || github.ref_name }}
+            ${{ startsWith(github.ref, 'refs/tags/v') && 'kaiachain/kaia:latest' || '' }} 
+
+  # Major-only: Update repository metadata
+  update-repo-metadata:
+    if: ${{ !contains(github.ref_name, '-rc.') }}
+    needs: [packaging-and-upload]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    container:
+      image: kaiachain/circleci-rpmbuild:1.23.7-gcc11
+    steps:
+      - name: Get AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
+          role-session-name: SessionForKaiaActions
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Update EL7 repo
+        run: |
+          aws s3 sync s3://${{ secrets.FRONTEND_BUCKET }}/packages/rhel/7/kaia/ rhel/7/kaia/
+          createrepo --update rhel/7/kaia
+          aws s3 sync --delete rhel/7/kaia/repodata/ s3://${{ secrets.FRONTEND_BUCKET }}/packages/rhel/7/kaia/repodata/
+      - name: Update EL9 repo
+        run: |
+          aws s3 sync s3://${{ secrets.FRONTEND_BUCKET }}/packages/rhel/9-stream/kaia/ rhel/9-stream/kaia/
+          createrepo --update rhel/9-stream/kaia
+          aws s3 sync --delete rhel/9-stream/kaia/repodata/ s3://${{ secrets.FRONTEND_BUCKET }}/packages/rhel/9-stream/kaia/repodata/
+      - name: Notify Slack on success
+        if: success()
+        run: |
+          curl --data '{"text": "✅ Repo metadata update succeeded for ${{ github.ref_name }}."}' "$SLACK_WEBHOOK_URL"
+      - name: Notify Slack on failure
+        if: failure()
+        run: |
+          curl --data '{"text": "❌ Repo metadata update failed for ${{ github.ref_name }}."}' "$SLACK_WEBHOOK_URL"

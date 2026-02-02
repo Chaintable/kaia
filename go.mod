@@ -1,6 +1,6 @@
 module github.com/kaiachain/kaia
 
-go 1.23.7
+go 1.25.3
 
 replace (
 	github.com/erigontech/erigon-lib => github.com/kaiachain/kaia-erigon/erigon-lib v0.0.0-20251014143208-04410a8d11b7
@@ -16,13 +16,14 @@ require (
 	github.com/bt51/ntpclient v0.0.0-20140310165113-3045f71e2530
 	github.com/cespare/cp v1.0.0
 	github.com/clevergo/websocket v1.0.0
-	github.com/consensys/gnark-crypto v0.18.0
+	github.com/consensys/gnark-crypto v0.18.1
 	github.com/crate-crypto/go-eth-kzg v1.3.0
 	github.com/davecgh/go-spew v1.1.1
 	github.com/deckarep/golang-set v1.8.0
 	github.com/dgraph-io/badger v1.6.0
 	github.com/docker/docker v25.0.6+incompatible
 	github.com/ethereum/c-kzg-4844/v2 v2.1.0
+	github.com/ethereum/go-bigmodexpfix v0.0.0-20250911101455-f9e208c548ab
 	github.com/fatih/color v1.16.0
 	github.com/go-redis/redis/v7 v7.4.0
 	github.com/go-sql-driver/mysql v1.6.0
@@ -55,14 +56,14 @@ require (
 	github.com/steakknife/bloomfilter v0.0.0-20180922174646-6819c0d2a570
 	github.com/steakknife/hamming v0.0.0-20180906055917-c99c65617cd3 // indirect
 	github.com/stretchr/testify v1.10.0
-	github.com/supranational/blst v0.3.14
+	github.com/supranational/blst v0.3.16
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 	github.com/urfave/cli/v2 v2.27.5
 	github.com/valyala/fasthttp v1.40.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.36.0
 	golang.org/x/net v0.38.0
-	golang.org/x/sys v0.31.0
+	golang.org/x/sys v0.37.0
 	golang.org/x/tools v0.31.0
 	google.golang.org/grpc v1.69.4
 	gopkg.in/DataDog/dd-trace-go.v1 v1.42.0
@@ -76,7 +77,7 @@ require (
 
 require (
 	github.com/Chaintable/pipeline v0.0.55-metis-debank-3.0.20251224075145-e23b2f2d1a12
-	github.com/btcsuite/btcd/btcec/v2 v2.3.4
+	github.com/btcsuite/btcd/btcec/v2 v2.3.5
 	github.com/cockroachdb/pebble v1.1.5
 	github.com/dop251/goja v0.0.0-20231014103939-873a1496dc8e
 	github.com/erigontech/erigon-lib v0.0.0-00010101000000-000000000000

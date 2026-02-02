@@ -1,10 +1,7 @@
 package impl
 
 import (
-	"github.com/kaiachain/kaia/blockchain"
-	"github.com/kaiachain/kaia/blockchain/state"
-	"github.com/kaiachain/kaia/blockchain/types"
-	"github.com/kaiachain/kaia/common"
+	"github.com/kaiachain/kaia/consensus"
 	"github.com/kaiachain/kaia/kaiax/gov/contractgov"
 	"github.com/kaiachain/kaia/kaiax/gov/headergov"
 	"github.com/kaiachain/kaia/log"
@@ -18,15 +15,7 @@ var (
 )
 
 type chain interface {
-	blockchain.ChainContext
-
-	GetHeaderByNumber(number uint64) *types.Header
-	CurrentBlock() *types.Block
-	State() (*state.StateDB, error)
-	StateAt(root common.Hash) (*state.StateDB, error)
-	StateAtUseFlat(root common.Hash, blockNumber uint64) (*state.StateDB, error)
-	Config() *params.ChainConfig
-	GetBlock(hash common.Hash, number uint64) *types.Block
+	consensus.ChainReader
 }
 
 type InitOpts struct {
