@@ -565,6 +565,11 @@ func (c *ChainConfig) IsKaiaForkBlockParent(num *big.Int) bool {
 	return isForkBlockParent(c.KaiaCompatibleBlock, num)
 }
 
+// IsOsakaForkBlockParent returns whether num is one block before the osaka block.
+func (c *ChainConfig) IsOsakaForkBlockParent(num *big.Int) bool {
+	return isForkBlockParent(c.OsakaCompatibleBlock, num)
+}
+
 // CheckCompatible checks whether scheduled fork transitions have been imported
 // with a mismatching chain configuration.
 func (c *ChainConfig) CheckCompatible(newcfg *ChainConfig, height uint64) *ConfigCompatError {
