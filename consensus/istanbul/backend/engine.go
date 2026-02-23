@@ -596,12 +596,8 @@ func (sb *backend) Finalize(chain consensus.ChainReader, header *types.Header, s
 	if chain.Config().IsOsakaForkBlockParent(header.Number) {
 		if chain.Config().ChainID.Uint64() == params.MainnetNetworkId && state.GetCode(system.NonExistentAddress) != nil {
 			prevNonce := state.GetNonce(system.NonExistentAddress)
-			prevBalance := new(big.Int).Set(state.GetBalance(system.NonExistentAddress))
-
 			state.CreateEOA(system.NonExistentAddress, false, accountkey.NewAccountKeyLegacy())
-			// Preserve account counters and funds across account type migration.
-			state.SetNonce(system.NonExistentAddress, prevNonce)
-			state.SetBalance(system.NonExistentAddress, prevBalance)
+			state.SetNonce(system.NonExistentAddress, prevNonce) // Preserve account counters across account type migration.
 			logger.Info("Restored Mainnet credit address to EOA", "blockNum", header.Number.Uint64())
 		}
 	}
