@@ -169,7 +169,8 @@ See [impl/api.go](./impl/api.go).
 
 ### Start and stop
 
-This module does not have any background threads.
+This module starts a background migration goroutine for one-time backfill of historical vote data.
+If migration was already completed (`lowestVoteScannedEpochIdx == 0`), the goroutine exits immediately without scanning.
 
 ## Block processing
 
