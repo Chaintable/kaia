@@ -232,7 +232,7 @@ curl "http://localhost:8551" -X POST -H 'Content-Type: application/json' --data 
 
 ### governance_idxCache
 
-Returns all vote block numbers from cache. The API name is retained for legacy compatibility.
+Returns all governance block numbers from cache. The API name is retained for legacy compatibility.
 
 - Parameters: none
 - Returns
