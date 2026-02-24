@@ -25,6 +25,7 @@ var (
 	// To prevent high CPU usage, the migration loop is throttled with a 50ms delay per iteration.
 	// For example, if migration starts at block 180,000,000, the entire process will take at least 0.5 hour.
 	migrationThrottlingDelay = 50 * time.Millisecond
+	maxMyVotesQueue          = 16
 
 	logger = log.NewModuleLogger(log.KaiaxGov)
 )
@@ -179,11 +180,57 @@ func (h *headerGovModule) isKoreHF(num uint64) bool {
 }
 
 func (h *headerGovModule) PushMyVotes(vote headergov.VoteData) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if len(h.myVotes) >= maxMyVotesQueue {
+		// Keep memory bounded if the API is spammed.
+		h.myVotes = h.myVotes[1:]
+		logger.Warn("myVotes queue full, dropping oldest vote", "limit", maxMyVotesQueue)
+	}
 	h.myVotes = append(h.myVotes, vote)
 }
 
 func (h *headerGovModule) PopMyVotes(idx int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if idx < 0 || idx >= len(h.myVotes) {
+		return
+	}
 	h.myVotes = append(h.myVotes[:idx], h.myVotes[idx+1:]...)
+}
+
+func (h *headerGovModule) peekMyVote() (headergov.VoteData, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	if len(h.myVotes) == 0 {
+		return nil, false
+	}
+	return h.myVotes[0], true
+}
+
+func (h *headerGovModule) myVotesSnapshot() []headergov.VoteData {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	ret := make([]headergov.VoteData, len(h.myVotes))
+	copy(ret, h.myVotes)
+	return ret
+}
+
+func (h *headerGovModule) removeMyVote(vote headergov.VoteData) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for i, myvote := range h.myVotes {
+		if isEqualVotes(myvote, vote) {
+			logger.Debug("Removing myvote", "vote", myvote)
+			h.myVotes = append(h.myVotes[:i], h.myVotes[i+1:]...)
+			return
+		}
+	}
 }
 
 // scanAllVotesInEpoch scans all votes from headers in the given epoch.

@@ -29,8 +29,8 @@ func (h *headerGovModule) VerifyHeader(header *types.Header) error {
 
 func (h *headerGovModule) PrepareHeader(header *types.Header) error {
 	// if this node has a vote waiting to be casted, put Vote field.
-	if len(h.myVotes) > 0 {
-		header.Vote, _ = h.myVotes[0].ToVoteBytes()
+	if vote, ok := h.peekMyVote(); ok {
+		header.Vote, _ = vote.ToVoteBytes()
 		logger.Debug("Prepare header with vote", "num", header.Number.Uint64(), "vote", hexutil.Encode(header.Vote))
 	}
 

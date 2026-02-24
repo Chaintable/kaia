@@ -103,6 +103,7 @@ func (api *headerGovAPI) Votes(num *rpc.BlockNumber) []VotesResponse {
 func (api *headerGovAPI) MyVotes() []MyVotesResponse {
 	epochIdx := calcEpochIdx(api.h.Chain.CurrentBlock().NumberU64(), api.h.epoch)
 	votesInEpoch := api.h.getVotesInEpoch(epochIdx)
+	pendingVotes := api.h.myVotesSnapshot()
 
 	ret := make([]MyVotesResponse, 0)
 	for blockNum, vote := range votesInEpoch {
@@ -116,7 +117,7 @@ func (api *headerGovAPI) MyVotes() []MyVotesResponse {
 		}
 	}
 
-	for _, vote := range api.h.myVotes {
+	for _, vote := range pendingVotes {
 		ret = append(ret, MyVotesResponse{
 			BlockNum: 0,
 			Casted:   false,
@@ -156,6 +157,6 @@ func (api *headerGovAPI) Status() StatusResponse {
 		Governances:  governances,
 		GovHistory:   govHistory,
 		NodeAddress:  api.h.nodeAddress,
-		MyVotes:      api.h.myVotes,
+		MyVotes:      api.h.myVotesSnapshot(),
 	}
 }
