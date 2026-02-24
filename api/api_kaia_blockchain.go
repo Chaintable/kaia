@@ -963,16 +963,16 @@ func (s *KaiaBlockChainAPI) GetCypressCredit(ctx context.Context) (*CreditOutput
 		return nil, err
 	}
 
-	if genesis != nil {
-		return &CreditOutput{
-			Photo:       cypressMainnetPhoto,
-			Names:       cypressMainnetNames,
-			EndingPhoto: cypressMainnetEndingPhoto,
-			EndingNames: cypressMainnetEndingNames,
-		}, nil
+	if genesis.Hash() != params.MainnetGenesisHash {
+		return nil, errNoCypressCreditContract
 	}
 
-	return nil, errNoCypressCreditContract
+	return &CreditOutput{
+		Photo:       cypressMainnetPhoto,
+		Names:       cypressMainnetNames,
+		EndingPhoto: cypressMainnetEndingPhoto,
+		EndingNames: cypressMainnetEndingNames,
+	}, nil
 }
 
 func (s *KaiaBlockChainAPI) makeRPCBlockOutputWithConsensusInfo(b *types.Block,
