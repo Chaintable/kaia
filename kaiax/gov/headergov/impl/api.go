@@ -132,10 +132,29 @@ func (api *headerGovAPI) Status() StatusResponse {
 	api.h.mu.RLock()
 	defer api.h.mu.RUnlock()
 
+	groupedVotes := make(map[uint64]headergov.VotesInEpoch, len(api.h.groupedVotes))
+	for epochIdx, votes := range api.h.groupedVotes {
+		copiedVotes := make(headergov.VotesInEpoch, len(votes))
+		for blockNum, vote := range votes {
+			copiedVotes[blockNum] = vote
+		}
+		groupedVotes[epochIdx] = copiedVotes
+	}
+
+	governances := make(map[uint64]headergov.GovData, len(api.h.governances))
+	for blockNum, gov := range api.h.governances {
+		governances[blockNum] = gov
+	}
+
+	govHistory := make(headergov.History, len(api.h.history))
+	for blockNum, pset := range api.h.history {
+		govHistory[blockNum] = pset
+	}
+
 	return StatusResponse{
-		GroupedVotes: api.h.groupedVotes,
-		Governances:  api.h.governances,
-		GovHistory:   api.h.history,
+		GroupedVotes: groupedVotes,
+		Governances:  governances,
+		GovHistory:   govHistory,
 		NodeAddress:  api.h.nodeAddress,
 		MyVotes:      api.h.myVotes,
 	}
