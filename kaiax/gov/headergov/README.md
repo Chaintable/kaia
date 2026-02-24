@@ -131,13 +131,10 @@ See [gov.go](./gov.go).
 
 See [history.go](./history.go).
 
-### HeaderCache
+### In-memory caches
 
-`HeaderCache` is used for caching DB data in memory.
-Cache is always fully synced with the DB, so there's no need to write from DB.
-In that sense, writing to the cache will write to DB as well.
-
-See [cache.go](./cache.go).
+This module caches vote/governance/history data in memory (`groupedVotes`, `governances`, `history`)
+while persisting corresponding indexes in DB schema keys.
 
 ### VotesResponse
 
