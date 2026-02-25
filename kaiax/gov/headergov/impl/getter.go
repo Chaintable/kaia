@@ -26,12 +26,17 @@ func (h *headerGovModule) GetPartialParamSet(blockNum uint64) gov.PartialParamSe
 	prevEpochStart := PrevEpochStart(blockNum, h.epoch, h.isKoreHF(blockNum))
 	ret := make(gov.PartialParamSet)
 
-	// merge all governance sets before num's prevEpochStart.
-	for _, num := range h.GovBlockNums() {
-		if num <= prevEpochStart {
-			for name, value := range h.governances[num].Items() {
-				ret.Add(string(name), value)
-			}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	blockNums := maps.Keys(h.governances)
+	slices.Sort(blockNums)
+	for _, num := range blockNums {
+		if num > prevEpochStart {
+			break
+		}
+		for name, value := range h.governances[num].Items() {
+			ret.Add(string(name), value)
 		}
 	}
 
