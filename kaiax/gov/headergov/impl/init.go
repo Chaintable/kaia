@@ -25,7 +25,6 @@ var (
 	// To prevent high CPU usage, the migration loop is throttled with a 50ms delay per iteration.
 	// For example, if migration starts at block 180,000,000, the entire process will take at least 0.5 hour.
 	migrationThrottlingDelay = 50 * time.Millisecond
-	maxMyVotesQueue          = 16
 
 	logger = log.NewModuleLogger(log.KaiaxGov)
 )
@@ -183,11 +182,6 @@ func (h *headerGovModule) PushMyVotes(vote headergov.VoteData) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if len(h.myVotes) >= maxMyVotesQueue {
-		// Keep memory bounded if the API is spammed.
-		h.myVotes = h.myVotes[1:]
-		logger.Warn("myVotes queue full, dropping oldest vote", "limit", maxMyVotesQueue)
-	}
 	h.myVotes = append(h.myVotes, vote)
 }
 
