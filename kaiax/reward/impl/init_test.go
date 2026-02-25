@@ -74,13 +74,15 @@ func makeTestRewardModule(t *testing.T,
 		}
 
 		paramset = gov.ParamSet{
-			ProposerPolicy: proposerPolicy,
-			UnitPrice:      25e9,
-			MintingAmount:  big.NewInt(6.4e18),
-			MinimumStake:   big.NewInt(5_000_000),
-			DeferredTxFee:  deferred,
-			Ratio:          "50/20/30",
-			Kip82Ratio:     "20/80",
+			ProposerPolicy:         proposerPolicy,
+			UnitPrice:              25e9,
+			MintingAmount:          big.NewInt(6.4e18),
+			MinimumStake:           big.NewInt(5_000_000),
+			DeferredTxFee:          deferred,
+			Ratio:                  "50/20/30",
+			Kip82Ratio:             "20/80",
+			StakingRewardThreshold: big.NewInt(5_000_000),
+			UseFlexReward:          false,
 		}
 
 		stakingInfo = makeTestStakingInfo([]uint64{5_000_001, 5_000_002, 5_000_003, 5_000_000}, isPrague)
