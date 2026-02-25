@@ -205,7 +205,8 @@ func (h *headerGovModule) checkConsistency(blockNum uint64, vote headergov.VoteD
 		gov.IstanbulCommitteeSize, gov.IstanbulEpoch, gov.IstanbulPolicy,
 		gov.Kip71BaseFeeDenominator, gov.Kip71GasTarget, gov.Kip71MaxBlockGasUsedForBaseFee,
 		gov.RewardDeferredTxFee, gov.RewardKip82Ratio, gov.RewardMintingAmount, gov.RewardMinimumStake,
-		gov.RewardProposerUpdateInterval, gov.RewardRatio, gov.RewardStakingUpdateInterval, gov.RewardUseGiniCoeff:
+		gov.RewardProposerUpdateInterval, gov.RewardRatio, gov.RewardStakingRewardThreshold,
+		gov.RewardStakingUpdateInterval, gov.RewardUseFlexReward, gov.RewardUseGiniCoeff:
 		return nil
 	default:
 		return ErrInvalidKeyValue
