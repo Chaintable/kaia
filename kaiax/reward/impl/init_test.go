@@ -137,6 +137,7 @@ func makeTestStakingInfo(stakingAmounts []uint64, isPrague bool) *staking.Stakin
 		StakingAmounts:   stakingAmounts,
 		KIFAddr:          common.HexToAddress("0xd01"),
 		KEFAddr:          common.HexToAddress("0xd02"),
+		KPFAddr:          common.HexToAddress("0x0"),
 		CLStakingInfos:   clStakingInfos,
 	}
 }
