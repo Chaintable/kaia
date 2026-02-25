@@ -147,6 +147,7 @@ func TestGetBlockReward(t *testing.T) {
 				Stakers:  big.NewInt(0),
 				KIF:      big.NewInt(0),
 				KEF:      big.NewInt(0),
+				KPF:      big.NewInt(0),
 				Rewards: map[common.Address]*big.Int{
 					common.HexToAddress("0xfff"): big.NewInt(6.4188e18),
 				},
@@ -164,6 +165,7 @@ func TestGetBlockReward(t *testing.T) {
 				Stakers:  big.NewInt(0),
 				KIF:      big.NewInt(0),
 				KEF:      big.NewInt(0),
+				KPF:      big.NewInt(0),
 				Rewards: map[common.Address]*big.Int{
 					common.HexToAddress("0xfff"): big.NewInt(6.4188e18),
 				},
@@ -181,6 +183,7 @@ func TestGetBlockReward(t *testing.T) {
 				Stakers:  big.NewInt(2.56e18 - 1),   // gsM - remainder
 				KIF:      big.NewInt(1.28e18),
 				KEF:      big.NewInt(1.92e18),
+				KPF:      big.NewInt(0),
 				Rewards: map[common.Address]*big.Int{
 					common.HexToAddress("0xfff"): big.NewInt(0.6588e18 + 1),
 					common.HexToAddress("0xd01"): big.NewInt(1.28e18),
@@ -203,6 +206,7 @@ func TestGetBlockReward(t *testing.T) {
 				Stakers:  big.NewInt(2.56e18 - 1), // gsM - remainder
 				KIF:      big.NewInt(1.28e18),
 				KEF:      big.NewInt(1.92e18),
+				KPF:      big.NewInt(0),
 				Rewards: map[common.Address]*big.Int{
 					common.HexToAddress("0xfff"): big.NewInt(0.64e18 + 1),
 					common.HexToAddress("0xd01"): big.NewInt(1.28e18),
@@ -225,6 +229,7 @@ func TestGetBlockReward(t *testing.T) {
 				Stakers:  big.NewInt(2.56e18 - 1), // gsM - remainder
 				KIF:      big.NewInt(1.28e18),
 				KEF:      big.NewInt(1.92e18),
+				KPF:      big.NewInt(0),
 				Rewards: map[common.Address]*big.Int{
 					common.HexToAddress("0xfff"): big.NewInt(0.64e18 + 1),
 					common.HexToAddress("0xd01"): big.NewInt(1.28e18),
@@ -268,6 +273,7 @@ func TestSpecWithNonDeferredFeeAuthor(t *testing.T) {
 		Stakers:  big.NewInt(0),
 		KIF:      big.NewInt(0),
 		KEF:      big.NewInt(0),
+		KPF:      big.NewInt(0),
 		Rewards: map[common.Address]*big.Int{
 			author:                       big.NewInt(0.025e18), // F (non-deferred) to Coinbase (author)
 			common.HexToAddress("0xfff"): big.NewInt(6.425e18), // M + F (deferred) to Rewardbase
@@ -301,6 +307,7 @@ func TestGetDeferredReward(t *testing.T) {
 				Stakers:  big.NewInt(0),
 				KIF:      big.NewInt(0),
 				KEF:      big.NewInt(0),
+				KPF:      big.NewInt(0),
 				Rewards: map[common.Address]*big.Int{
 					common.HexToAddress("0xfff"): big.NewInt(6.4e18),
 				},
@@ -318,6 +325,7 @@ func TestGetDeferredReward(t *testing.T) {
 				Stakers:  big.NewInt(0),
 				KIF:      big.NewInt(0),
 				KEF:      big.NewInt(0),
+				KPF:      big.NewInt(0),
 				Rewards: map[common.Address]*big.Int{
 					common.HexToAddress("0xfff"): big.NewInt(6.4188e18),
 				},
@@ -335,6 +343,7 @@ func TestGetDeferredReward(t *testing.T) {
 				Stakers:  big.NewInt(2.56e18 - 1), // gsM - remainder
 				KIF:      big.NewInt(1.28e18),
 				KEF:      big.NewInt(1.92e18),
+				KPF:      big.NewInt(0),
 				Rewards: map[common.Address]*big.Int{
 					common.HexToAddress("0xfff"): big.NewInt(0.64e18 + 1),
 					common.HexToAddress("0xd01"): big.NewInt(1.28e18),
@@ -357,6 +366,7 @@ func TestGetDeferredReward(t *testing.T) {
 				Stakers:  big.NewInt(2.56e18 - 1), // gsM - remainder
 				KIF:      big.NewInt(1.28e18),
 				KEF:      big.NewInt(1.92e18),
+				KPF:      big.NewInt(0),
 				Rewards: map[common.Address]*big.Int{
 					common.HexToAddress("0xfff"): big.NewInt(0.64e18 + 1),
 					common.HexToAddress("0xd01"): big.NewInt(1.28e18),
@@ -379,6 +389,7 @@ func TestGetDeferredReward(t *testing.T) {
 				Stakers:  big.NewInt(2.56e18 - 1), // gsM - remainder
 				KIF:      big.NewInt(1.28e18),
 				KEF:      big.NewInt(1.92e18),
+				KPF:      big.NewInt(0),
 				Rewards: map[common.Address]*big.Int{
 					common.HexToAddress("0xfff"): big.NewInt(0.64e18 + 1),
 					common.HexToAddress("0xd01"): big.NewInt(1.28e18),
@@ -501,6 +512,7 @@ func TestGetDeferredRewardSimple(t *testing.T) {
 			Stakers:  big.NewInt(0),
 			KIF:      big.NewInt(0),
 			KEF:      big.NewInt(0),
+			KPF:      big.NewInt(0),
 			Rewards: map[common.Address]*big.Int{
 				common.HexToAddress("0xfff"): big.NewInt(6.47e18),
 			},
@@ -515,6 +527,7 @@ func TestGetDeferredRewardSimple(t *testing.T) {
 			Stakers:  big.NewInt(0),
 			KIF:      big.NewInt(0),
 			KEF:      big.NewInt(0),
+			KPF:      big.NewInt(0),
 			Rewards: map[common.Address]*big.Int{
 				common.HexToAddress("0xfff"): big.NewInt(6.4e18),
 			},
@@ -529,6 +542,7 @@ func TestGetDeferredRewardSimple(t *testing.T) {
 			Stakers:  big.NewInt(0),
 			KIF:      big.NewInt(0),
 			KEF:      big.NewInt(0),
+			KPF:      big.NewInt(0),
 			Rewards: map[common.Address]*big.Int{
 				common.HexToAddress("0xfff"): big.NewInt(6.47e18),
 			},
@@ -543,6 +557,7 @@ func TestGetDeferredRewardSimple(t *testing.T) {
 			Stakers:  big.NewInt(0),
 			KIF:      big.NewInt(0),
 			KEF:      big.NewInt(0),
+			KPF:      big.NewInt(0),
 			Rewards: map[common.Address]*big.Int{
 				common.HexToAddress("0xfff"): big.NewInt(6.435e18),
 			},
@@ -593,6 +608,7 @@ func TestGetDeferredRewardFull(t *testing.T) {
 			Stakers:  big.NewInt(0),
 			KIF:      big.NewInt(1.28e18),
 			KEF:      big.NewInt(1.92e18),
+			KPF:      big.NewInt(0),
 			Rewards: map[common.Address]*big.Int{
 				common.HexToAddress("0xfff"): big.NewInt(3.2e18),
 				common.HexToAddress("0xd01"): big.NewInt(1.28e18),
@@ -609,6 +625,7 @@ func TestGetDeferredRewardFull(t *testing.T) {
 			Stakers:  big.NewInt(0),
 			KIF:      big.NewInt(1.294e18),
 			KEF:      big.NewInt(1.941e18),
+			KPF:      big.NewInt(0),
 			Rewards: map[common.Address]*big.Int{
 				common.HexToAddress("0xfff"): big.NewInt(3.235e18),
 				common.HexToAddress("0xd01"): big.NewInt(1.294e18),
@@ -625,6 +642,7 @@ func TestGetDeferredRewardFull(t *testing.T) {
 			Stakers:  big.NewInt(0),
 			KIF:      big.NewInt(1.287e18),
 			KEF:      big.NewInt(1.9305e18),
+			KPF:      big.NewInt(0),
 			Rewards: map[common.Address]*big.Int{
 				common.HexToAddress("0xfff"): big.NewInt(3.2175e18),
 				common.HexToAddress("0xd01"): big.NewInt(1.287e18),
@@ -641,6 +659,7 @@ func TestGetDeferredRewardFull(t *testing.T) {
 			Stakers:  big.NewInt(2.56e18 - 1), // gsM - remainder
 			KIF:      big.NewInt(1.28e18),
 			KEF:      big.NewInt(1.92e18),
+			KPF:      big.NewInt(0),
 			Rewards: map[common.Address]*big.Int{
 				common.HexToAddress("0xfff"): big.NewInt(0.64e18 + 1),
 				common.HexToAddress("0xd01"): big.NewInt(1.28e18),
@@ -660,6 +679,7 @@ func TestGetDeferredRewardFull(t *testing.T) {
 			Stakers:  big.NewInt(2.56e18 - 1), // gsM - remainder
 			KIF:      big.NewInt(1.28e18),
 			KEF:      big.NewInt(1.92e18),
+			KPF:      big.NewInt(0),
 			Rewards: map[common.Address]*big.Int{
 				common.HexToAddress("0xfff"): big.NewInt(1.00e18 + 1),
 				common.HexToAddress("0xd01"): big.NewInt(1.28e18),
@@ -679,6 +699,7 @@ func TestGetDeferredRewardFull(t *testing.T) {
 			Stakers:  big.NewInt(2.56e18 - 1), // gsM - remainder
 			KIF:      big.NewInt(1.28e18),
 			KEF:      big.NewInt(1.92e18),
+			KPF:      big.NewInt(0),
 			Rewards: map[common.Address]*big.Int{
 				common.HexToAddress("0xfff"): big.NewInt(0.64e18 + 1),
 				common.HexToAddress("0xd01"): big.NewInt(1.28e18),
@@ -703,6 +724,7 @@ func TestGetDeferredRewardFull(t *testing.T) {
 			Stakers:  big.NewInt(2.56e18 - 1), // gsM - remainder
 			KIF:      big.NewInt(1.28e18),
 			KEF:      big.NewInt(1.92e18),
+			KPF:      big.NewInt(0),
 			Rewards: map[common.Address]*big.Int{
 				common.HexToAddress("0xfff"): big.NewInt(1.00e18 + 1),
 				common.HexToAddress("0xd01"): big.NewInt(1.28e18),
