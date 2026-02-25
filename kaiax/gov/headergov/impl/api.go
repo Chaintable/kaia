@@ -152,11 +152,14 @@ func (api *headerGovAPI) Status() StatusResponse {
 		govHistory[blockNum] = pset
 	}
 
+	myVotes := make([]headergov.VoteData, len(api.h.myVotes))
+	copy(myVotes, api.h.myVotes)
+
 	return StatusResponse{
 		GroupedVotes: groupedVotes,
 		Governances:  governances,
 		GovHistory:   govHistory,
 		NodeAddress:  api.h.nodeAddress,
-		MyVotes:      api.h.myVotesSnapshot(),
+		MyVotes:      myVotes,
 	}
 }
