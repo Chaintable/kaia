@@ -115,7 +115,7 @@ func (s *StakingModule) getFromState(header *types.Header, statedb *state.StateD
 		return nil, staking.ErrMultiCallCall(err)
 	}
 
-	// Get staking info from AddressBook (1/2)
+	// Get staking info from AddressBook
 	callOpts := &bind.CallOpts{BlockNumber: header.Number}
 	abRes, err := contract.MultiCallStakingInfo(callOpts)
 	if err != nil {
