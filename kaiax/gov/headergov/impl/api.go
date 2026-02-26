@@ -103,6 +103,7 @@ func (api *headerGovAPI) Votes(num *rpc.BlockNumber) []VotesResponse {
 func (api *headerGovAPI) MyVotes() []MyVotesResponse {
 	epochIdx := calcEpochIdx(api.h.Chain.CurrentBlock().NumberU64(), api.h.epoch)
 	votesInEpoch := api.h.getVotesInEpoch(epochIdx)
+	pendingVotes := api.h.myVotesSnapshot()
 
 	ret := make([]MyVotesResponse, 0)
 	for blockNum, vote := range votesInEpoch {
@@ -116,7 +117,7 @@ func (api *headerGovAPI) MyVotes() []MyVotesResponse {
 		}
 	}
 
-	for _, vote := range api.h.myVotes {
+	for _, vote := range pendingVotes {
 		ret = append(ret, MyVotesResponse{
 			BlockNum: 0,
 			Casted:   false,
@@ -132,11 +133,33 @@ func (api *headerGovAPI) Status() StatusResponse {
 	api.h.mu.RLock()
 	defer api.h.mu.RUnlock()
 
+	groupedVotes := make(map[uint64]headergov.VotesInEpoch, len(api.h.groupedVotes))
+	for epochIdx, votes := range api.h.groupedVotes {
+		copiedVotes := make(headergov.VotesInEpoch, len(votes))
+		for blockNum, vote := range votes {
+			copiedVotes[blockNum] = vote
+		}
+		groupedVotes[epochIdx] = copiedVotes
+	}
+
+	governances := make(map[uint64]headergov.GovData, len(api.h.governances))
+	for blockNum, gov := range api.h.governances {
+		governances[blockNum] = gov
+	}
+
+	govHistory := make(headergov.History, len(api.h.history))
+	for blockNum, pset := range api.h.history {
+		govHistory[blockNum] = pset
+	}
+
+	myVotes := make([]headergov.VoteData, len(api.h.myVotes))
+	copy(myVotes, api.h.myVotes)
+
 	return StatusResponse{
-		GroupedVotes: api.h.groupedVotes,
-		Governances:  api.h.governances,
-		GovHistory:   api.h.history,
+		GroupedVotes: groupedVotes,
+		Governances:  governances,
+		GovHistory:   govHistory,
 		NodeAddress:  api.h.nodeAddress,
-		MyVotes:      api.h.myVotes,
+		MyVotes:      myVotes,
 	}
 }
