@@ -421,5 +421,17 @@ func getGenesisParamNames(config *params.ChainConfig) []gov.ParamName {
 		}
 	}
 
+	if config.IsOsakaForkEnabled(common.Big0) &&
+		config.Governance != nil {
+		if config.Governance.Reward != nil &&
+			config.Governance.Reward.StakingRewardThreshold != nil {
+			genesisParamNames = append(genesisParamNames, gov.RewardStakingRewardThreshold)
+		}
+		if config.Governance.Reward != nil &&
+			config.Governance.Reward.UseFlexReward {
+			genesisParamNames = append(genesisParamNames, gov.RewardUseFlexReward)
+		}
+	}
+
 	return genesisParamNames
 }

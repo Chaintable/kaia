@@ -29,6 +29,8 @@ kip71.upperboundbasefee
 reward.kip82ratio
 reward.mintingamount
 reward.ratio
+reward.stakingrewardthreshold
+reward.useflexreward
 
 <immutable parameters - Mainnet configuration>
 governance.governancemode: single
