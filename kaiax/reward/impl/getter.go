@@ -264,7 +264,7 @@ func getDeferredRewardFull(config *reward.RewardConfig, totalFee *big.Int, si *s
 	}
 
 	// Both non-deferred and deferred modes
-	if config.Rules.IsKore && config.UseFlexReward {
+	if config.Rules.IsOsaka && config.UseFlexReward {
 		return getDeferredRewardFullFlex(config, totalFee, burntFee, si)
 	} else if config.Rules.IsKore {
 		return getDeferredRewardFullKore(config, totalFee, burntFee, si)

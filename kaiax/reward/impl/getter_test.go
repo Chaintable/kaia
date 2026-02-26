@@ -779,7 +779,7 @@ func TestGetDeferredRewardFullFlex_CompatibleWithKore(t *testing.T) {
 		totalFee *big.Int
 		expected *reward.RewardSpec
 	}{
-		{"prague low traffic", lowFee, &reward.RewardSpec{
+		{"flex, low traffic, equivalent to prague", lowFee, &reward.RewardSpec{
 			RewardSummary: reward.RewardSummary{
 				Minted:   big.NewInt(6.4e18),
 				TotalFee: big.NewInt(7e16),
@@ -804,7 +804,7 @@ func TestGetDeferredRewardFullFlex_CompatibleWithKore(t *testing.T) {
 				common.HexToAddress("0xe03"): big.NewInt(479999520000000000),
 			},
 		}},
-		{"prague high traffic", highFee, &reward.RewardSpec{
+		{"flex, high traffic, equivalent to prague", highFee, &reward.RewardSpec{
 			RewardSummary: reward.RewardSummary{
 				Minted:   big.NewInt(6.4e18),
 				TotalFee: big.NewInt(2.00e18),
@@ -834,6 +834,7 @@ func TestGetDeferredRewardFullFlex_CompatibleWithKore(t *testing.T) {
 		config.Rules.IsMagma = true
 		config.Rules.IsKore = true
 		config.Rules.IsPrague = true
+		config.Rules.IsOsaka = true
 		si := makeTestStakingInfo([]uint64{5_000_001, 5_000_002, 5_000_003, 5_000_000}, true) // 1:2:3:0
 
 		spec, err := getDeferredRewardFull(config, tc.totalFee, si)
@@ -862,12 +863,12 @@ func TestGetDeferredRewardFullFlex_CustomConfig(t *testing.T) {
 	)
 	testcases := []struct {
 		desc      string
-		prague    bool
+		hasCL     bool
 		threshold *big.Int
 		kpfAddr   common.Address
 		expected  *reward.RewardSpec
 	}{
-		{"kore 5m threshold", false, big.NewInt(5_000_000), kpfAddr, &reward.RewardSpec{
+		{"flex, 5m threshold, no CL", false, big.NewInt(5_000_000), kpfAddr, &reward.RewardSpec{
 			RewardSummary: reward.RewardSummary{
 				Minted:   mintingAmount,
 				TotalFee: big.NewInt(7e16),
@@ -889,7 +890,7 @@ func TestGetDeferredRewardFullFlex_CustomConfig(t *testing.T) {
 				common.HexToAddress("0xc02"): big.NewInt(2.56e18),
 			},
 		}},
-		{"kore 3m threshold", false, big.NewInt(3_000_000), kpfAddr, &reward.RewardSpec{
+		{"flex, 3m threshold, no CL", false, big.NewInt(3_000_000), kpfAddr, &reward.RewardSpec{
 			RewardSummary: reward.RewardSummary{
 				Minted:   mintingAmount,
 				TotalFee: big.NewInt(7e16),
@@ -912,7 +913,7 @@ func TestGetDeferredRewardFullFlex_CustomConfig(t *testing.T) {
 				common.HexToAddress("0xc04"): big.NewInt(1279999360000319999),
 			},
 		}},
-		{"kore 0 threshold", false, big.NewInt(0), kpfAddr, &reward.RewardSpec{
+		{"flex, 0 threshold, no CL", false, big.NewInt(0), kpfAddr, &reward.RewardSpec{
 			RewardSummary: reward.RewardSummary{
 				Minted:   mintingAmount,
 				TotalFee: big.NewInt(7e16),
@@ -935,7 +936,7 @@ func TestGetDeferredRewardFullFlex_CustomConfig(t *testing.T) {
 				common.HexToAddress("0xc04"): big.NewInt(1279999744000051199),
 			},
 		}},
-		{"prague 5m threshold", true, big.NewInt(5_000_000), kpfAddr, &reward.RewardSpec{
+		{"flex, 5m threshold, with CL", true, big.NewInt(5_000_000), kpfAddr, &reward.RewardSpec{
 			RewardSummary: reward.RewardSummary{
 				Minted:   mintingAmount,
 				TotalFee: big.NewInt(7e16),
@@ -960,7 +961,7 @@ func TestGetDeferredRewardFullFlex_CustomConfig(t *testing.T) {
 				common.HexToAddress("0xe02"): big.NewInt(731427840000000000),
 			},
 		}},
-		{"prague 3m threshold", true, big.NewInt(3_000_000), kpfAddr, &reward.RewardSpec{
+		{"flex, 3m threshold, with CL", true, big.NewInt(3_000_000), kpfAddr, &reward.RewardSpec{
 			RewardSummary: reward.RewardSummary{
 				Minted:   mintingAmount,
 				TotalFee: big.NewInt(7e16),
@@ -986,7 +987,7 @@ func TestGetDeferredRewardFullFlex_CustomConfig(t *testing.T) {
 				common.HexToAddress("0xe02"): big.NewInt(487618559999999999),
 			},
 		}},
-		{"prague 0m threshold", true, big.NewInt(0), kpfAddr, &reward.RewardSpec{
+		{"flex, 0 threshold, with CL", true, big.NewInt(0), kpfAddr, &reward.RewardSpec{
 			RewardSummary: reward.RewardSummary{
 				Minted:   mintingAmount,
 				TotalFee: big.NewInt(7e16),
@@ -1012,7 +1013,7 @@ func TestGetDeferredRewardFullFlex_CustomConfig(t *testing.T) {
 				common.HexToAddress("0xe02"): big.NewInt(426666239999999999),
 			},
 		}},
-		{"empty KPFAddr", true, big.NewInt(0), common.Address{}, &reward.RewardSpec{
+		{"flex, empty KPFAddr", true, big.NewInt(0), common.Address{}, &reward.RewardSpec{
 			RewardSummary: reward.RewardSummary{
 				Minted:   mintingAmount,
 				TotalFee: big.NewInt(7e16),
@@ -1037,7 +1038,7 @@ func TestGetDeferredRewardFullFlex_CustomConfig(t *testing.T) {
 				common.HexToAddress("0xe02"): big.NewInt(426666239999999999),
 			},
 		}},
-		{"no one eligible for staking reward", true, big.NewInt(9_000_000), kpfAddr, &reward.RewardSpec{
+		{"flex, no one eligible for staking reward", true, big.NewInt(9_000_000), kpfAddr, &reward.RewardSpec{
 			RewardSummary: reward.RewardSummary{
 				Minted:   mintingAmount,
 				TotalFee: big.NewInt(7e16),
@@ -1060,7 +1061,8 @@ func TestGetDeferredRewardFullFlex_CustomConfig(t *testing.T) {
 	for _, tc := range testcases {
 		config.Rules.IsMagma = true
 		config.Rules.IsKore = true
-		config.Rules.IsPrague = tc.prague
+		config.Rules.IsPrague = true
+		config.Rules.IsOsaka = true
 		config.StakingRewardThreshold = tc.threshold
 
 		// Node3 will never be eligible, regardless of threshold because cnStaking (4m) < minStake (5m).
@@ -1073,7 +1075,7 @@ func TestGetDeferredRewardFullFlex_CustomConfig(t *testing.T) {
 		// yes     3mil       3m        4m         0         2m
 		// yes     0          6m        7m         0         5m
 		// no      9mil       0         0          0         0
-		si := makeTestStakingInfo([]uint64{5_000_001, 5_000_002, 4_000_003, 5_000_000}, tc.prague)
+		si := makeTestStakingInfo([]uint64{5_000_001, 5_000_002, 4_000_003, 5_000_000}, tc.hasCL)
 		si.KPFAddr = tc.kpfAddr
 
 		spec, err := getDeferredRewardFull(config, totalFee, si)
