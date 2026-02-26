@@ -23,11 +23,11 @@ func (h *headerGovModule) GetParamSet(blockNum uint64) gov.ParamSet {
 }
 
 func (h *headerGovModule) GetPartialParamSet(blockNum uint64) gov.PartialParamSet {
-	prevEpochStart := PrevEpochStart(blockNum, h.epoch, h.isKoreHF(blockNum))
-	ret := make(gov.PartialParamSet)
-
 	h.mu.RLock()
 	defer h.mu.RUnlock()
+
+	prevEpochStart := PrevEpochStart(blockNum, h.epoch, h.isKoreHF(blockNum))
+	ret := make(gov.PartialParamSet)
 
 	blockNums := maps.Keys(h.governances)
 	slices.Sort(blockNums)
