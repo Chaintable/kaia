@@ -140,7 +140,7 @@ func TestGetPartialParamSet_ConcurrentAccess(t *testing.T) {
 	var (
 		wgReader sync.WaitGroup
 		wgWriter sync.WaitGroup
-		stopSig atomic.Bool
+		stopSig  atomic.Bool
 	)
 
 	// Writer goroutine continuously mutates h.governances under write lock.
