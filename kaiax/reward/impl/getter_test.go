@@ -1038,7 +1038,7 @@ func TestGetDeferredRewardFullFlex_CustomConfig(t *testing.T) {
 				common.HexToAddress("0xe02"): big.NewInt(426666239999999999),
 			},
 		}},
-		{"flex, no one eligible for staking reward", true, big.NewInt(9_000_000), kpfAddr, &reward.RewardSpec{
+		{"flex, all below threshold, no staking reward", true, big.NewInt(9_000_000), kpfAddr, &reward.RewardSpec{
 			RewardSummary: reward.RewardSummary{
 				Minted:   mintingAmount,
 				TotalFee: big.NewInt(7e16),

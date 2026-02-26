@@ -443,6 +443,9 @@ func assignStakingRewardsFlex(config *reward.RewardConfig, budget *big.Int, si *
 		// The KAIA unit will cancel out:
 		// reward (kei) = excess (KAIA) * budget (kei) / totalExcess (KAIA)
 		reward := new(big.Int).Div(new(big.Int).Mul(excess, budget), totalExcess)
+		if reward.Sign() <= 0 {
+			continue
+		}
 
 		// If Prague and CL is configured for this CN, split the reward between CN and CL.
 		if isPrague && cn.CLStakingInfo != nil {
