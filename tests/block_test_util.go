@@ -301,10 +301,11 @@ func (e *eestEngine) applyHeader(parent *types.Header, h btHeader) {
 }
 
 func (t *BlockTest) Run() error {
-	config, ok := Forks[t.json.Network]
+	baseConfig, ok := Forks[t.json.Network]
 	if !ok {
 		return UnsupportedForkError{t.json.Network}
 	}
+	config := baseConfig.Copy()
 	config.SetDefaults()
 	// Since we calculate the baseFee differently than eth, we will set it to 0 to turn off the gas fee.
 	config.Governance.KIP71 = &params.KIP71Config{
