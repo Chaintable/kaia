@@ -80,11 +80,11 @@ The rules have changed over hardforks.
 
 ![kip226_reward](./kip226_reward.png)
 
-- **Flex rule**: The flexible reward rule is introduced in v2.2.2 with `istanbul.policy == 2`, `reward.deferredtxfee = true` and `reward.useflexreward = true`.
+- **Flex rule**: The flexible reward rule is activated since v2.2.2 and Osaka hardfork when `istanbul.policy == 2`, `reward.deferredtxfee = true` and `reward.useflexreward = true`.
   - MR: M is distributed according to the `reward.ratio` and `reward.kip82ratio`.
     - The `reward.ratio` parameter can be either four parts (g/x/y/z) or three parts (g/x/y), in which case z is zero.
     - The fourth portion is granted to the Fund3 (KPF).
-    - The rewards allocated to stakers is further distributed by their relative staking amounts. The staker rewards are proportional to their staking amounts exceeding the `reward.stakingrewardthreshold` parameter. However, their staking amounts must still be at least the `reward.minimumstake` parameter to be eligible.
+    - The rewards allocated to stakers are further distributed according to their relative staking amounts. The staker rewards are proportional to their staking amounts that exceeds `reward.stakingrewardthreshold`. However, their staking amounts must still be at least `reward.minimumstake` to be eligible.
 
 ## Persistent schema
 
