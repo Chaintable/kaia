@@ -41,10 +41,15 @@ The rules have changed over hardforks.
   - **Stakers (S)**: The validators, including proposer, who staked enough tokens to be eligible for rewards. Receives rewards to its staking address.
 - **Fund1 (X; KIF, KFF, KGF, PoC)**: The first fund. Its address is specified in the AddressBook contract. Its name has been changed over hardforks. Current name is KIF (Kaia Infrastructure Fund).
 - **Fund2 (Y; KEF, KCF, KIR)**: The second fund. Its address is specified in the AddressBook contract. Current name is KEF (Kaia Ecosystem Fund).
+- **Fund3 (Z; KPF)**: The third fund. Its address is specified in the AddressBook contract. Current name is KPF (Kaia Protocol Fund).
 - **Burnt (B)**: The amount burnt. Tokens are implicitly burnt during reward distribution; the transaction fees are deducted from the transaction senders but less amount are added to the reward recipients.
-- **Reward ratio**: The reward distribution ratio among GC, Fund1, and Fund2 (G/X/Y).
-  - Determined by the `reward.ratio` parameter in three nonnegative integer percentiles sums up to 100. e.g. `34/54/12`
-- **KIP-82 ratio**: The reward distribution ratio between proposer and stakers (P/S).
+- **Reward ratio**: The reward distribution ratio among GC, Fund1, Fund2, and optionally Fund3 (g/x/y) or (g/x/y/z).
+  - Determined by the `reward.ratio` parameter in three or four nonnegative integer percentiles sums up to 100. e.g. `34/54/12` or `40/25/25/10`.
+  - If the ratio is in three parts (`g/x/y`), `z` is considered `0`.
+  - The fourth part (`z`) is relevant only when `reward.useflexreward == true`.
+  - If the fourth part (`z`) is nonzero with `reward.useflexreward == false`, the fourth portion is regarded as a remainder and added to the first fund for backward compatibility, making the ratio effectively three parts of (g/x+z/y). This is a fallback behavior when the parameters are inconsistently specified.
+arameters are inconsistently specified.
+- **KIP-82 ratio**: The reward distribution ratio between proposer and stakers (p/s).
   - Determined by the `reward.kip82` parameter in two nonnegative integer percentiles sums up to 100. e.g. `20/80`
 
 ### Allocation
@@ -56,7 +61,7 @@ The rules have changed over hardforks.
   - DF: F is distributed according to the reward ratio.
   - There has been a bug to the chains using the NDF method where the NDF and DF are both distributed to the proposer. However since those chains have already created such blocks, this is considered as the legal pre-Magma behavior. (https://github.com/klaytn/klaytn/issues/1692, https://github.com/klaytn/klaytn/pull/1709, https://github.com/klaytn/klaytn/pull/1886). This behavior only occurs in the chains with `istanbul.policy != 2` and `reward.deferredtxfee = false`. Kaia Mainnet and Kairos testnet are unaffected.
 - **Magma rule (KIP-71)**: The rule since the Magma hardfork.
-  - MR: M is distributed according to the reward ratio.
+  - MR: Same as the previous rule.
   - NDF: Half the fee (F/2) is granted to the proposer. The other half is burnt.
   - DF: Half the fee (F/2) is distributed according to the reward ratio. The other half is burnt.
 - **Kore rule (KIP-82)**: The rule since the KIP-82 hardfork.
@@ -64,19 +69,22 @@ The rules have changed over hardforks.
     - The rewards allocated to stakers is further distributed by their relative staking amounts. The staker rewards are proportional to their staking amounts exceeding the minimum staking amount. The minimum staking amount refers to the `reward.minstake` parameter which determines the staking requirement to be a validator.
     - If no validator has staked more than the minimum staking amount, all staking rewards are sent to the proposer.
     - Any remainder from the division math is sent to the proposer, simplifying the calculation of total rewards.
+  - NDF: Same as the previous rule.
   - DF: Proposer receives `max(0, F/2 - gpM)` and rest of the fees are burnt.
     - The proposer's minting reward is fixed to a product of minting amount (M), validator's reward ratio (g) and KIP-82 proposer ratio (p). This amount is considered the minimum operation cost of a validator.
     - Among the fees (F), half is always burnt since Magma. The other half (F/2) is burnt up to the proposer's minting reward (gpM), but the exceeding part (F/2 - gpM) is granted to the proposer.
     - Summing up, the proposer is guaranteed a minimum even if transaction fees are no enough to support the validator operating cost, yet incentivized to include as many transactions as possible for more reward.
+    - As a special case, if the proposer reward ratio is zero `p=0`, then proposer receives `F/2` and the other `F/2` is burnt.
 
 ![kip82_reward](./kip82_reward.png)
 
 - **Prague rule (KIP-226)**: The rule since the KIP-226 hardfork with `istanbul.policy == 2` and `reward.deferredtxfee = true`.
-  - Since Prague hardfork, the consensus liquidity is introduced. The validator's total staking amount is summed up with the KAIA staked in consensus liquidity.
+  - MR: The consensus liquidity is introduced. The validator's total staking amount is summed up with the KAIA staked in consensus liquidity.
     - If the validator has staked more than `reward.minstake` in staking-only (CNStaking) contract, the validator's total staking amount will be summed up with the consensus liquidity.
     - In this case, the reward between staking-only and consensus liquidity will be distributed proportionally to their staking amounts.
     - Otherwise, validator will not be eligible for rewards.
-  - Other rules are the same as the Kore rule.
+  - NDF: Same as the previous rule.
+  - DF: Same as the previous rule.
 
 ![kip226_reward](./kip226_reward.png)
 
@@ -85,6 +93,8 @@ The rules have changed over hardforks.
     - The `reward.ratio` parameter can be either four parts (g/x/y/z) or three parts (g/x/y), in which case z is zero.
     - The fourth portion is granted to the Fund3 (KPF).
     - The rewards allocated to stakers are further distributed according to their relative staking amounts. The staker rewards are proportional to their staking amounts that exceeds `reward.stakingrewardthreshold`. However, their staking amounts must still be at least `reward.minimumstake` to be eligible.
+  - NDF: Same as the previous rule.
+  - DF: Same as the previous rule.
 
 ## Persistent schema
 
