@@ -98,28 +98,9 @@ The rules have changed over hardforks.
 
 ### RewardSummary
 
-```go
-type RewardSummary struct {
-	Minted   *big.Int `json:"minted"`
-	TotalFee *big.Int `json:"totalFee"`
-	BurntFee *big.Int `json:"burntFee"`
-}
-```
-
 `RewardSummary` is a summary of reward components. Calculation of it does not require StakingInfo so it can be calculated in full nodes. Useful for tracking the total supply of the native token.
 
 ### RewardSpec
-
-```go
-type RewardSpec struct {
-	RewardSummary
-	Proposer *big.Int                    `json:"proposer"`
-	Stakers  *big.Int                    `json:"stakers"`
-	KIF      *big.Int                    `json:"kif"`
-	KEF      *big.Int                    `json:"kef"`
-	Rewards  map[common.Address]*big.Int `json:"rewards"`
-}
-```
 
 `RewardSpec` is a reward distribution specification for a block. Describes each reward component and their recipients.
 - It can represent the deferred reward to be distributed at the end of the block (e.g. FinalizeBlock).
@@ -185,7 +166,8 @@ curl "http://localhost:8551" -X POST -H 'Content-Type: application/json' --data 
   "proposer": "3200268993750000000",
   "stakers": "0",
   "kgf": "2560215195000000000",
-  "kir": "640053798750000000"
+  "kir": "640053798750000000",
+  "kpf": "0",
   "rewards": {
     "0xa86fd667c6a340c53cc5d796ba84dbe1f29cb2f7": "3200268993750000000",
     "0x2bcf9d3e4a846015e7e3152a614c684de16f37c6": "2560215195000000000",
@@ -217,6 +199,7 @@ curl "http://localhost:8551" -X POST -H 'Content-Type: application/json' --data 
   "totalStakingRewards": 0,
   "totalKIFRewards": 0,
   "totalKEFRewards": 0,
+  "totalKPFRewards": 0,
   "rewards": {
     "0x571e53df607be97431a5bbefca1dffe5aef56f4d": 38400000000000000000,
     "0x5cb1a7dccbd0dc446e3640898ede8820368554c8": 48000000000000000000,
