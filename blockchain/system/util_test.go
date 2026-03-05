@@ -108,7 +108,7 @@ func TestActiveSystemContracts(t *testing.T) {
 		},
 		{
 			name:        "Osaka head - mainnet",
-			head:        big.NewInt(211090000),
+			head:        big.NewInt(213333000),
 			chainConfig: mainnetConfig,
 			genesisHash: params.MainnetGenesisHash,
 			expected: map[string]common.Address{
