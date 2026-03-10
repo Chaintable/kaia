@@ -80,7 +80,7 @@ require (
 	github.com/cockroachdb/pebble v1.1.5
 	github.com/dop251/goja v0.0.0-20231014103939-873a1496dc8e
 	github.com/erigontech/erigon-lib v0.0.0-00010101000000-000000000000
-	github.com/erigontech/secp256k1 v1.2.0
+	github.com/erigontech/secp256k1 v1.2.1-0.20260221042510-ac99ccb83278
 	github.com/google/uuid v1.6.0
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/satori/go.uuid v1.2.0

@@ -29,8 +29,8 @@ func (h *headerGovModule) VerifyHeader(header *types.Header) error {
 
 func (h *headerGovModule) PrepareHeader(header *types.Header) error {
 	// if this node has a vote waiting to be casted, put Vote field.
-	if len(h.myVotes) > 0 {
-		header.Vote, _ = h.myVotes[0].ToVoteBytes()
+	if vote, ok := h.peekMyVote(); ok {
+		header.Vote, _ = vote.ToVoteBytes()
 		logger.Debug("Prepare header with vote", "num", header.Number.Uint64(), "vote", hexutil.Encode(header.Vote))
 	}
 
@@ -205,7 +205,8 @@ func (h *headerGovModule) checkConsistency(blockNum uint64, vote headergov.VoteD
 		gov.IstanbulCommitteeSize, gov.IstanbulEpoch, gov.IstanbulPolicy,
 		gov.Kip71BaseFeeDenominator, gov.Kip71GasTarget, gov.Kip71MaxBlockGasUsedForBaseFee,
 		gov.RewardDeferredTxFee, gov.RewardKip82Ratio, gov.RewardMintingAmount, gov.RewardMinimumStake,
-		gov.RewardProposerUpdateInterval, gov.RewardRatio, gov.RewardStakingUpdateInterval, gov.RewardUseGiniCoeff:
+		gov.RewardProposerUpdateInterval, gov.RewardRatio, gov.RewardStakingRewardThreshold,
+		gov.RewardStakingUpdateInterval, gov.RewardUseFlexReward, gov.RewardUseGiniCoeff:
 		return nil
 	default:
 		return ErrInvalidKeyValue

@@ -61,7 +61,7 @@ var (
 		},
 		KaiaCompatibleBlock:   big.NewInt(162900480),
 		PragueCompatibleBlock: big.NewInt(190670000),
-		OsakaCompatibleBlock:  big.NewInt(211090000),
+		OsakaCompatibleBlock:  big.NewInt(213333000),
 		// Optional forks
 		Kip103CompatibleBlock: big.NewInt(119750400),
 		Kip103ContractAddress: common.HexToAddress("0xD5ad6D61Dd87EdabE2332607C328f5cc96aeCB95"),
@@ -345,13 +345,15 @@ func (g *GovernanceConfig) DeferredTxFee() bool {
 // RewardConfig stores information about the network's token economy
 type RewardConfig struct {
 	MintingAmount          *big.Int `json:"mintingAmount"`
-	Ratio                  string   `json:"ratio"`                  // Define how much portion of reward be distributed to CN/KIF/KEF
-	Kip82Ratio             string   `json:"kip82ratio,omitempty"`   // Define how much portion of reward be distributed to proposer/stakers
-	UseGiniCoeff           bool     `json:"useGiniCoeff"`           // Decide if Gini Coefficient will be used or not
-	DeferredTxFee          bool     `json:"deferredTxFee"`          // Decide if TX fee will be handled instantly or handled later at block finalization
-	StakingUpdateInterval  uint64   `json:"stakingUpdateInterval"`  // Interval when staking information is updated
-	ProposerUpdateInterval uint64   `json:"proposerUpdateInterval"` // Interval when proposer information is updated
-	MinimumStake           *big.Int `json:"minimumStake"`           // Minimum amount of kei to join CCO
+	Ratio                  string   `json:"ratio"`                            // Define how much portion of reward be distributed to CN/KIF/KEF
+	Kip82Ratio             string   `json:"kip82ratio,omitempty"`             // Define how much portion of reward be distributed to proposer/stakers
+	UseGiniCoeff           bool     `json:"useGiniCoeff"`                     // Decide if Gini Coefficient will be used or not
+	DeferredTxFee          bool     `json:"deferredTxFee"`                    // Decide if TX fee will be handled instantly or handled later at block finalization
+	StakingUpdateInterval  uint64   `json:"stakingUpdateInterval"`            // Interval when staking information is updated
+	ProposerUpdateInterval uint64   `json:"proposerUpdateInterval"`           // Interval when proposer information is updated
+	MinimumStake           *big.Int `json:"minimumStake"`                     // Minimum amount of kei to join CCO
+	StakingRewardThreshold *big.Int `json:"stakingRewardThreshold,omitempty"` // Threshold subtracted before proportional staking reward distribution
+	UseFlexReward          bool     `json:"useFlexReward,omitempty"`          // Enable flexible reward scheme (reward.ratio g/x/y/z)
 }
 
 // Magma governance parameters
@@ -565,6 +567,11 @@ func (c *ChainConfig) IsKaiaForkBlockParent(num *big.Int) bool {
 	return isForkBlockParent(c.KaiaCompatibleBlock, num)
 }
 
+// IsOsakaForkBlockParent returns whether num is one block before the osaka block.
+func (c *ChainConfig) IsOsakaForkBlockParent(num *big.Int) bool {
+	return isForkBlockParent(c.OsakaCompatibleBlock, num)
+}
+
 // CheckCompatible checks whether scheduled fork transitions have been imported
 // with a mismatching chain configuration.
 func (c *ChainConfig) CheckCompatible(newcfg *ChainConfig, height uint64) *ConfigCompatError {
@@ -710,6 +717,9 @@ func (c *ChainConfig) SetDefaults() {
 	}
 	if c.Governance.Reward.Kip82Ratio == "" {
 		c.Governance.Reward.Kip82Ratio = DefaultKip82Ratio
+	}
+	if c.Governance.Reward.StakingRewardThreshold == nil {
+		c.Governance.Reward.StakingRewardThreshold = DefaultStakingRewardThreshold
 	}
 }
 
