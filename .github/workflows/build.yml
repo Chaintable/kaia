@@ -109,7 +109,7 @@ jobs:
           docker rmi ${REGISTRY}/${IMAGE}:amd64-${REVISION}
           docker rmi ${REGISTRY}/${IMAGE}:arm64-${REVISION}
 
-      - name: Lark Notification
-        continue-on-error: true
-        run: |
-          notiv3 "Blockchain klaytn latest image pushed 🎉" ${REGISTRY}/${IMAGE}:${REVISION}
+      # - name: Lark Notification
+      #   continue-on-error: true
+      #   run: |
+      #     notiv3 "Blockchain klaytn latest image pushed 🎉" ${REGISTRY}/${IMAGE}:${REVISION}
