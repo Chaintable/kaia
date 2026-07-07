@@ -1,69 +1,118 @@
-# Contributing Guidelines
+# Contributing
 
-Thank you for your interest in contributing to Kaia. As an open source project, Kaia is always open to the developer community and we welcome your contribution. Please read the guideline below and follow it in all interactions with the project.
+Thanks for your interest in contributing.
 
-## How to Contribute
+This repository is a **fork**: upstream [kaiachain/kaia](https://github.com/kaiachain/kaia)
+plus the [Chaintable pipeline](https://github.com/Chaintable/pipeline) tracer. It
+runs write node(s) that produce block data for the Chaintable data pipeline, for
+the chain(s) listed in this repository's CI configuration and README. It is not
+a general-purpose fork of kaiachain/kaia.
 
-1. Read this [contributing document](./CONTRIBUTING.md).
-2. Sign [Contributor Licensing Agreement (CLA)](#contributor-license-agreement-cla) in the **PR comment**.
-3. Before making a PR, please make sure to check the following:
-  - You should format your change. Kaia uses a stricter go format [golangci-lint](https://github.com/golangci/golangci-lint). Please take a look [how to lint your change](HOW-TO-LINT-YOUR-CHANGE.md).
-  - You should make sure you fully tested the code via running `make test`.
-  - You should make sure the PR targets the `dev` branch.
-  - You should make sure the PR is not too large. Your PR may be rejected if the changed LOC is over 1,000. It is recommended to split the PR into smaller ones.
-4. After submitting the PR, wait for code review and approval. The reviewer may ask you for additional commits or changes.
-5. Once the change has been approved, the PR will be merged by the project moderator.
-6. After merging the PR, we close the pull request. You can then delete the now obsolete branch.
+**First, determine where your change belongs:**
 
-## Types of Contribution
+- **Chain client changes** (consensus, p2p, EVM, RPC, txpool) — contribute
+  **upstream**, following their contributing process. We cannot accept
+  chain-core changes in this fork: they would diverge from upstream and be lost
+  or cause conflicts at the next upstream merge. If an upstream fix matters to
+  this fork, open an issue here linking the upstream PR/commit and we will pull
+  it in with the next sync.
 
-There are various ways to contribute and participate. Please read the guidelines below regarding the process of each type of contribution.
+- **Pipeline layer changes** — the pipeline tracer and its block-data output,
+  the Dockerfile, published images, CI workflows, or docs about running this
+  write node — contribute **here**, following the process below.
 
-- [Issues and Bugs](#issues-and-bugs)
-- [Feature Requests](#feature-requests)
-- [Code Contribution](#code-contribution)
+---
 
-### Issues and Bugs
+## Our Process (contributions to the Chaintable pipeline layer)
 
-If you find a bug or other issues in Kaia, please [submit an issue](https://github.com/kaiachain/kaia/issues). If the bug is related to security, please follow [SECURITY.md](./SECURITY.md). Before submitting an issue, please invest some extra time to figure out that:
+### Getting Started
 
-- The issue is not a duplicate issue.
-- The issue has not been fixed in the latest release of Kaia.
+Requirements:
 
-Please do not use the issue tracker for personal support requests. Use [Kaia Dev Forum](https://devforum.kaia.io/) for the personal support requests.
+* Go (version per `go.mod`)
 
-When you report a bug, please make sure that your report has the following information.
+### Development Workflow
 
-- Steps to reproduce the issue.
-- A clear and complete description of the issue.
-- Code and/or screen captures are highly recommended.
+1. Fork the repository
+2. Create a branch from `main`
+3. Make changes, focused on the pipeline layer
+4. Run local checks
+5. Open a PR
 
-After confirming your report meets the above criteria, [submit the issue](https://github.com/kaiachain/kaia/issues).
+Keep PRs small and focused.
 
-### Feature Requests
+### Local Checks (must pass)
 
-You can also use the [issue tracker](https://github.com/kaiachain/kaia/issues) to request a new feature or enhancement. Note that any code contribution without an issue link will not be accepted. Please submit an issue explaining your proposal first so that the Kaia community can fully understand and discuss the idea.
+```bash
+make kcn
+make test
+```
 
-### Code Contribution
+### Code Guidelines
 
-Please follow the coding style and quality requirements to satisfy the product standards. You must follow the coding style as best as you can when submitting code. Take note of naming conventions, separation of concerns, and formatting rules.
+* Keep the diff minimal — prefer hooks over invasive edits to client code
+* Match the existing code style and conventions (`gofmt`)
+* Prefer simple and explicit logic
+* Do not change chain-core behavior (see the top of this document)
 
-The go implementation of Kaia uses [godoc](https://pkg.go.dev/golang.org/x/tools/cmd/godoc)
-to document its source code. For the guideline of official Go language, please
-refer to the following websites:
-- https://go.dev/doc/effective_go#commentary
-- https://go.dev/blog/godoc
+### Testing
 
-## Versioning Policy
+Changes to the pipeline layer must include tests where practical. At minimum,
+describe how you verified the emitted data: chain, block range, and what you
+compared it against.
 
-Kaia follows [Semantic Versioning](https://semver.org/) format `v{ MAJOR }.{ MINOR }.{ PATCH }`. Increment the:
+### Pull Requests
 
-- **MAJOR** version when both conditions are met: (1) when a breaking change (hard fork) occurs, and (2) when tokenomics/governance is affected.
-- **MINOR** version for most regular client updates.
-- **PATCH** version for simple/urgent bug fixes, improvements, or hard fork activation block number updates.
+Before submitting:
 
-## Contributor License Agreement (CLA)
+* Local checks pass
+* Tests added or updated
+* Behavior changes clearly explained
 
-Keep in mind when you submit your pull request, you will need to sign the [CLA](https://gist.github.com/kaiachain-dev/bbf65cc330275c057463c4c94ce787a6) via the PR comment for legal purposes. You will have to sign the CLA just one time, either as an individual or corporation.
+PRs should include:
 
-You will be prompted to sign the agreement by CLA Assistant (bot) when you open a Pull Request for the first time.
+* Summary
+* Motivation
+* Testing details
+* Compatibility impact
+
+Note on CI: it builds the Docker images for this repository, and the image
+publishing steps need repository credentials, which GitHub does not provide to
+pull requests from forks — those steps failing on a fork PR is expected. A
+maintainer will build and verify your change on an internal branch.
+
+### Commit Guidelines
+
+* Use clear, descriptive messages
+
+Example:
+
+```
+tracer: fix state-diff ordering for reorged blocks
+```
+
+### Releases
+
+* Release tags follow `v<base-version>-ct.N` (`ct` = Chaintable; e.g.
+  `v2.2.2-ct.3`); a GitHub Release publishes the versioned images
+
+### Reporting Issues
+
+Please include:
+
+* Image tag or commit
+* Chain and block height
+* Reproduction steps
+* Expected vs actual behavior
+
+### Security
+
+Do not disclose vulnerabilities publicly.
+
+See [SECURITY.md](./SECURITY.md) for reporting instructions.
+
+### License
+
+By contributing, you agree that your contributions are licensed under the same
+terms as this repository — see [COPYING](./COPYING) (GPL-3.0) and
+[COPYING.LESSER](./COPYING.LESSER) (LGPL-3.0).
