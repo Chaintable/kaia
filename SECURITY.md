@@ -1,123 +1,84 @@
-# Introduction
+# Security Policy
 
-Thank you for helping keep the Kaia ecosystem secure.
+This repository is a **fork**: upstream [kaiachain/kaia](https://github.com/kaiachain/kaia)
+plus the [Chaintable pipeline](https://github.com/Chaintable/pipeline) tracer,
+which exports block data (headers, transactions, call traces, receipts, events,
+state diffs) to the Chaintable data pipeline.
 
-We operate a responsible disclosure and bug bounty program in partnership with [HackenProof](https://hackenproof.com/companies/kaia). This document outlines how to report vulnerabilities, our bounty scope, and program rules.
+**First, determine where the issue lives.** The key question: does it reproduce
+on an unmodified upstream build?
 
----
+- **Upstream issue** — reproduces on vanilla upstream (typically consensus, p2p
+  networking, EVM execution, transaction pool, standard RPC, storage). It affects
+  every user of the upstream client, not just this fork. **Follow the upstream
+  security process, not this document:**
+  https://github.com/kaiachain/kaia/security/policy
 
-##  Reporting a Vulnerability
+  We pick up upstream security fixes through periodic upstream merges; please do
+  not disclose upstream vulnerabilities here.
 
-Please **do not use GitHub, email, or Discord** to report vulnerabilities.
-
-Instead, submit all reports via our official bug bounty dashboard:
-
-👉 [Report a vulnerability on HackenProof](https://hackenproof.com/companies/kaia)
-
-You must report vulnerabilities **within 24 hours of discovery** and exclusively via HackenProof to be eligible for a bounty.
-
----
-
-##  Bug Bounty Program Overview
-
-We offer bounties for valid, impactful vulnerabilities across the [Kaia Protocol](https://hackenproof.com/programs/kaia-protocol) and [Kaia Web](https://hackenproof.com/programs/kaia-web) ecosystem.
-
-Reward amounts vary based on:
-- Impact
-- Severity
-- Quality of report and PoC
+- **This fork's issue** — only reproduces with this fork's binaries or published
+  images, or involves the Chaintable pipeline layer: the pipeline tracer and its
+  block-data output, the Dockerfile / image build, or the CI workflows.
+  **Follow our process below.**
 
 ---
 
-## In-Scope Targets
+## Our Process (issues in the Chaintable pipeline layer)
 
-###  Kaia Protocol (Blockchain Layer)
+### Supported Versions
 
-Focuses on blockchain protocol vulnerabilities, including but not limited to:
-- Stealing or loss of funds
-- Unauthorized or manipulated transactions
-- Price or fee manipulation
-- Balance or tokenomics manipulation
-- Privacy violations
-- Cryptographic flaws
+We provide security updates for the latest `main` branch and recent releases.
 
-###  Kaia Web (Web Apps, SDKs, APIs)
+| Version | Supported |
+|---------|----------|
+| main    | ✅       |
+| Latest release | ✅ |
+| older versions   | ❌ |
 
-Focuses on web-based vulnerabilities such as:
-- Business logic issues
-- Payment manipulation
-- Remote Code Execution (RCE)
-- SQL/XXE Injection
-- Access control issues (IDOR, Privilege Escalation)
-- Sensitive data leaks
-- SSRF, CSRF, XSS
-- File inclusion, directory traversal
+### Reporting a Vulnerability
 
-See the full list on our [Kaia Web HackenProof Program page](https://hackenproof.com/programs/kaia-web).
+If you discover a security issue in the Chaintable pipeline layer, **do not open
+a public issue**.
 
----
+Please report it privately:
 
-##  Out-of-Scope Vulnerabilities
+- GitHub Security Advisory on this repository (preferred)
+- Email: bugbounty@debank.com
 
-Some issues are **not eligible** for bounties, including:
+Include:
 
-### Blockchain
-- Network-level DoS
-- Attacks with  unrealistic assumptions - e.g., acquiring privileged accounts
+- Description of the issue
+- Impact / severity assessment
+- Steps to reproduce
+- Proof of concept (if available)
 
-### Web
-- Vulnerabilities in third-party tools
-- Best practice concerns without PoC
-- Clickjacking, open redirects (without impact)
-- TLS config, SPF/DMARC/DNS misconfigs
-- Lack of HTTP headers, verbose errors, self-XSS
-- DoS/DDoS, social engineering, or phishing
-- Issues only affecting outdated browsers
-- Vulnerabilities requiring unlikely user actions
+### Response Process
 
-See the full list on our [Kaia Web HackenProof Program page](https://hackenproof.com/programs/kaia-web).
+We aim to:
 
----
+- Acknowledge within **72 hours**
+- Provide initial assessment within **3–5 days**
+- Fix and release as soon as possible depending on severity
 
-##  Rules & Guidelines
+### Disclosure Policy
 
-To participate, you must follow these rules:
+- We follow **responsible disclosure**
+- Fixes may be developed privately before public release
+- Credit will be given unless you request anonymity
 
-- Test only in scope — no attacks on infrastructure or third-party systems
-- Do not spam forms or create high-traffic scans
-- Do not attempt DoS, phishing, or social engineering
-- Do not access or modify other users’ data
-- Do not disclose vulnerabilities publicly without our permission
+### Scope
 
-All tests should be confined to your own accounts or test environments.
+Typical security-relevant areas of the Chaintable pipeline layer include:
 
----
+- Integrity of the emitted block data (ordering, duplication, corruption)
+- The pipeline tracer and any RPC endpoints it adds
+- Resource exhaustion introduced by the pipeline tracer (memory / goroutine leaks)
+- The published Docker images and the build / CI pipeline
 
-## Eligibility for Bounties
+### Notes
 
-To qualify for a reward:
-- Be the **first** to report the issue
-- Submit only through HackenProof
-- Include clear **steps to reproduce** and a **working PoC**
-- Do not be a current/former employee or contractor
-
-> AI-generated reports without a working PoC are **not eligible**.
-
----
-
-## Coordinated Disclosure
-
-- **Do not share vulnerabilities publicly**, even after they are resolved
-- All communication must go through HackenProof
-- Public disclosure will disqualify the report
-
----
-
-## Resources
-
--  [Kaia Bounty Program on HackenProof](https://hackenproof.com/companies/kaia)  
--  [Kaia Documentation](https://docs.kaia.io)
-
----
-
-Thanks for helping us improve Kaia’s security! We appreciate every responsible disclosure.
+This fork is a data producer for the
+[Chaintable pipeline](https://github.com/Chaintable/pipeline): its output feeds
+downstream indexing and query systems. Security issues here may propagate
+downstream — please report anything suspicious.
