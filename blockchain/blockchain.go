@@ -37,8 +37,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	ptracer "github.com/Chaintable/pipeline/tracer"
-	pipelinetypes "github.com/Chaintable/pipeline/types"
 	"github.com/go-redis/redis/v7"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/kaiachain/kaia/blockchain/state"
@@ -57,6 +55,7 @@ import (
 	"github.com/kaiachain/kaia/log"
 	kaiametrics "github.com/kaiachain/kaia/metrics"
 	"github.com/kaiachain/kaia/params"
+	ptracer "github.com/kaiachain/kaia/pipeline/tracer"
 	"github.com/kaiachain/kaia/rlp"
 	"github.com/kaiachain/kaia/snapshot"
 	"github.com/kaiachain/kaia/storage/database"
@@ -293,7 +292,11 @@ func NewBlockChain(db database.DBManager, cacheConfig *CacheConfig, chainConfig 
 		if vmConfig.VMTraceJsonConfig != "" {
 			traceConfig = json.RawMessage(vmConfig.VMTraceJsonConfig)
 		}
-		bc.tracer, _ = ptracer.NewPipelineTracer(traceConfig)
+		tracer, err := ptracer.NewPipelineTracer(traceConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create pipeline tracer: %w", err)
+		}
+		bc.tracer = tracer
 		bc.vmConfig.Debug = true
 		bc.vmConfig.Tracer = bc.tracer
 	}
@@ -381,13 +384,11 @@ func NewBlockChain(db database.DBManager, cacheConfig *CacheConfig, chainConfig 
 	}
 	logger.Info("prefetchTxWorkers are started", "num", bc.cacheConfig.TrieNodeCacheConfig.NumFetcherPrefetchWorker)
 
-	if bc.tracer != nil && bc.tracer.OnBlockchainInit != nil {
-		bc.tracer.OnBlockchainInit(&params.ChainConfig{
-			ChainID: bc.chainConfig.ChainID,
-		})
+	if bc.tracer != nil {
+		bc.tracer.OnBlockchainInit(bc.chainConfig)
 	}
 	logger.Info("Initialised blockchain", "head", bc.CurrentHeader().Number, "hash", bc.CurrentHeader().Hash())
-	if bc.tracer != nil && bc.tracer.OnGenesisBlock != nil {
+	if bc.tracer != nil {
 		if block := bc.CurrentBlock(); block.Number().Uint64() == 0 {
 			logger.Info("Genesis block is set", "hash", block.Hash())
 			alloc, err := getGenesisState(bc.db, block.Hash())
@@ -1133,6 +1134,10 @@ func (bc *BlockChain) Stop() {
 	atomic.StoreInt32(&bc.procInterrupt, 1)
 
 	bc.wg.Wait()
+
+	if bc.tracer != nil {
+		bc.tracer.OnClose()
+	}
 
 	// Ensure that the entirety of the state snapshot is journalled to disk.
 	var snapBase common.Hash
@@ -2098,25 +2103,15 @@ func (bc *BlockChain) insertChain(chain types.Blocks) (int, []interface{}, []*ty
 		if err != nil {
 			return i, events, coalescedLogs, err
 		}
-		stateDB.OnLog = bc.tracer.OnLog
-		stateDB.OnCommit = bc.tracer.OnCommit
-
-		// INSERT_YOUR_CODE
-		// To copy the block, create a new Block instance duplicating its data.
-		// This ensures that the original block isn't modified unexpectedly elsewhere.
-		// Use types.CopyBlock if available, or manually create a new block referencing the same header/txs/receipts.
-		// Example (assuming a CopyBlock utility exists):
-		//   copiedBlock := types.CopyBlock(block)
-		// If not, perform a shallow or deep copy by hand as needed:
-		//   copiedHeader := types.CopyHeader(block.Header())
-		//   copiedTxs := make([]*types.Transaction, len(block.Transactions()))
-		//   copy(copiedTxs, block.Transactions())
-		//   copiedBlock := types.NewBlock(copiedHeader, copiedTxs, block.Receipts())
-		bc.tracer.OnBlockStart(block)
-		defer bc.tracer.OnBlockEnd(nil)
+		if bc.tracer != nil {
+			stateDB.OnLog = bc.tracer.OnLog
+			stateDB.OnCommit = bc.tracer.OnCommit
+			bc.tracer.OnBlockStart(block)
+		}
 		// Process block using the parent state as reference point.
 		receipts, logs, usedGas, internalTxTraces, procStats, err := bc.processor.Process(block, stateDB, bc.vmConfig)
 		if err != nil {
+			bc.pipelineBlockEnd(err)
 			bc.reportBlock(block, receipts, err)
 			atomic.StoreUint32(&followupInterrupt, 1)
 			return i, events, coalescedLogs, err
@@ -2125,6 +2120,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks) (int, []interface{}, []*ty
 		// Validate the state using the default validator
 		err = bc.validator.ValidateState(block, parent, stateDB, receipts, usedGas)
 		if err != nil {
+			bc.pipelineBlockEnd(err)
 			bc.reportBlock(block, receipts, err)
 			atomic.StoreUint32(&followupInterrupt, 1)
 			return i, events, coalescedLogs, err
@@ -2132,7 +2128,12 @@ func (bc *BlockChain) insertChain(chain types.Blocks) (int, []interface{}, []*ty
 		afterValidate := time.Now()
 
 		// Write the block to the chain and get the writeResult.
+		// The pipeline tracer uploads the block to S3 when its state is committed.
 		writeResult, err := bc.writeBlockWithState(block, receipts, stateDB)
+		bc.pipelineBlockEnd(err)
+		if err == nil && writeResult.Status == CanonStatTy {
+			bc.pushPipelineBlockChange(block)
+		}
 		if err != nil {
 			atomic.StoreUint32(&followupInterrupt, 1)
 			if err == ErrKnownBlock {
@@ -2915,62 +2916,13 @@ func GetInternalTxTrace(tracer vm.Tracer) (*vm.InternalTxTrace, error) {
 		internalTxTrace = nil
 		err = nil
 	case *ptracer.PipelineTracer:
+		// The pipeline tracer uploads traces itself and stores nothing locally.
 		return nil, nil
 	default:
 		logger.Error("To trace internal transactions, VM tracer type should be vm.InternalTxTracer", "actualType", reflect.TypeOf(tracer).String())
 		return nil, ErrInvalidTracer
 	}
 	return internalTxTrace, nil
-}
-
-// convertGenesisAllocToPipeline converts local GenesisAlloc to pipeline types GenesisAlloc
-func convertGenesisAllocToPipeline(alloc GenesisAlloc) pipelinetypes.GenesisAlloc {
-	if alloc == nil {
-		logger.Warn("Genesis alloc is nil")
-		return nil
-	}
-
-	logger.Info("Converting genesis alloc to pipeline types", "allocCount", len(alloc))
-
-	// Create pipeline alloc map
-	pipelineAlloc := make(pipelinetypes.GenesisAlloc, len(alloc))
-	convertedCount := 0
-
-	// Directly convert each account from local type to pipeline type
-	for addr, account := range alloc {
-		logger.Info("Converting account", "address", addr.Hex(), "balance", account.Balance.String())
-
-		// Create new pipeline account and copy values directly
-		pipelineAccount := pipelinetypes.GenesisAccount{
-			Balance: new(big.Int).Set(account.Balance), // Copy balance directly
-		}
-
-		// Copy code if present
-		if len(account.Code) > 0 {
-			pipelineAccount.Code = make([]byte, len(account.Code))
-			copy(pipelineAccount.Code, account.Code)
-		}
-
-		// Copy storage if present (pipeline uses same type: map[common.Hash]common.Hash)
-		if len(account.Storage) > 0 {
-			pipelineAccount.Storage = make(map[common.Hash]common.Hash, len(account.Storage))
-			for k, v := range account.Storage {
-				pipelineAccount.Storage[k] = v
-			}
-		}
-
-		// Copy nonce
-		pipelineAccount.Nonce = account.Nonce
-
-		// Use address as key (pipeline uses common.Address as key)
-		pipelineAlloc[addr] = pipelineAccount
-		convertedCount++
-
-		logger.Info("Converted account", "address", addr.Hex(), "balance", pipelineAccount.Balance.String(), "nonce", pipelineAccount.Nonce)
-	}
-
-	logger.Info("Successfully converted genesis alloc to pipeline types", "allocCount", len(pipelineAlloc), "convertedCount", convertedCount)
-	return pipelineAlloc
 }
 
 // CheckBlockChainVersion checks the version of the current database and upgrade if possible.

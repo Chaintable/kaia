@@ -25,13 +25,12 @@ package blockchain
 import (
 	"time"
 
-	"github.com/Chaintable/pipeline/tracer"
-	"github.com/erigontech/erigon-lib/log/v3"
 	"github.com/kaiachain/kaia/blockchain/state"
 	"github.com/kaiachain/kaia/blockchain/types"
 	"github.com/kaiachain/kaia/blockchain/vm"
 	"github.com/kaiachain/kaia/common"
 	"github.com/kaiachain/kaia/params"
+	"github.com/kaiachain/kaia/pipeline/tracer"
 )
 
 // StateProcessor is a basic Processor, which takes care of transitioning
@@ -81,16 +80,11 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 
 	processStats.BeforeApplyTxs = time.Now()
 
-	var pipelineTracer *tracer.PipelineTracer
-	if cfg.Tracer != nil {
-		if p, ok := cfg.Tracer.(*tracer.PipelineTracer); !ok {
-			log.Crit("vmConfig.Tracer must be a pipeline.Tracer")
-		} else {
-			pipelineTracer = p
-			statedb.OnLog = p.OnLog
-			statedb.OnCommit = p.OnCommit
-			cfg.Debug = true
-		}
+	pipelineTracer, _ := cfg.Tracer.(*tracer.PipelineTracer)
+	if pipelineTracer != nil {
+		statedb.OnLog = pipelineTracer.OnLog
+		statedb.OnCommit = pipelineTracer.OnCommit
+		cfg.Debug = true
 	}
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
