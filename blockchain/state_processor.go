@@ -86,11 +86,14 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		statedb.OnCommit = pipelineTracer.OnCommit
 		cfg.Debug = true
 	}
+	signer := types.MakeSigner(p.config, header.Number)
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
 		statedb.SetTxContext(tx.Hash(), block.Hash(), i)
 		if pipelineTracer != nil {
-			from, _ := tx.From()
+			// tx.From() only works for Kaia native tx types; Sender also
+			// recovers it for Ethereum tx types (legacy, 2930, 1559, 7702).
+			from, _ := types.Sender(signer, tx)
 			pipelineTracer.OnTxStart(tx, from)
 		}
 		receipt, internalTxTrace, err := p.bc.ApplyTransaction(p.config, &author, statedb, header, tx, usedGas, &cfg)
