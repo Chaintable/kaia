@@ -40,7 +40,7 @@ func GetModuleName(mi ModuleID) string {
 
 func GetModuleID(moduleName string) ModuleID {
 	moduleName = strings.ToLower(moduleName)
-	for i := 0; i < len(moduleNames); i++ {
+	for i := range len(moduleNames) {
 		if moduleName == moduleNames[i] {
 			return ModuleID(i)
 		}
@@ -139,6 +139,7 @@ const (
 	KaiaxGasless
 	Builder
 	KaiaxAuction
+	KaiaxVrank
 
 	BlockchainVmOeTracer
 	Pipeline
@@ -228,8 +229,10 @@ var moduleNames = [ModuleNameLen]string{
 	"kaiax/valset",
 	"kaiax/randao",
 	"kaiax/gasless",
-	"blockchain/vm/oetracer",
 	"builder",
 	"kaiax/auction",
+	"kaiax/vrank",
+
+	"blockchain/vm/oetracer",
 	"pipeline",
 }

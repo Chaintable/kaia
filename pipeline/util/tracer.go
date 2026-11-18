@@ -1,71 +1,31 @@
 package util
 
 import (
-	"encoding/hex"
 	"math/big"
 	"strings"
 	"time"
 
-	lru "github.com/hashicorp/golang-lru"
 	"github.com/kaiachain/kaia/blockchain/types"
 	"github.com/kaiachain/kaia/common"
 	"github.com/kaiachain/kaia/common/hexutil"
 	"github.com/kaiachain/kaia/consensus/istanbul"
-	"github.com/kaiachain/kaia/crypto/sha3"
 	"github.com/kaiachain/kaia/log"
 	"github.com/kaiachain/kaia/params"
 	ptypes "github.com/kaiachain/kaia/pipeline/types"
-	"github.com/kaiachain/kaia/rlp"
 )
 
 var (
-	logger = log.NewModuleLogger(log.Pipeline)
-
-	inmemoryBlocks             = 2048 // Number of blocks to precompute validators' addresses
-	inmemoryValidatorsPerBlock = 30   // Approximate number of validators' addresses from ecrecover
-	signatureAddresses, _      = lru.NewARC(inmemoryBlocks * inmemoryValidatorsPerBlock)
+	logger         = log.NewModuleLogger(log.Pipeline)
+	istanbulSealer = istanbul.NewSealerImpl(nil)
 )
 
 // emptyUncleHash is the uncle hash Kaia reports over the eth namespace (Kaia has no uncles).
 var emptyUncleHash = common.HexToHash("0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347")
 
-func sigHash(header *types.Header) (hash common.Hash) {
-	hasher := sha3.NewKeccak256()
-
-	// Clean seal is required for calculating proposer seal.
-	rlp.Encode(hasher, types.IstanbulFilteredHeader(header, false))
-	hasher.Sum(hash[:0])
-	return hash
-}
-
-// cacheSignatureAddresses extracts the address from the given data and signature and cache them for later usage.
-func cacheSignatureAddresses(data []byte, sig []byte) (common.Address, error) {
-	sigStr := hex.EncodeToString(sig)
-	if addr, ok := signatureAddresses.Get(sigStr); ok {
-		return addr.(common.Address), nil
-	}
-	addr, err := istanbul.GetSignatureAddress(data, sig)
-	if err != nil {
-		return common.Address{}, err
-	}
-	signatureAddresses.Add(sigStr, addr)
-	return addr, err
-}
-
-// ecrecover extracts the block proposer address from a signed Kaia header.
-func ecrecover(header *types.Header) (common.Address, error) {
-	// Retrieve the signature from the header extra-data
-	istanbulExtra, err := types.ExtractIstanbulExtra(header)
-	if err != nil {
-		return common.Address{}, err
-	}
-	return cacheSignatureAddresses(sigHash(header).Bytes(), istanbulExtra.Seal)
-}
-
 // blockMiner returns the proposer of the block. Kaia's Rewardbase is not the
 // proposer, so it is recovered from the Istanbul seal instead.
 func blockMiner(header *types.Header) common.Address {
-	miner, err := ecrecover(header)
+	miner, err := istanbulSealer.Author(header)
 	if err != nil {
 		if header.Number.Sign() != 0 {
 			logger.Warn("Failed to ecrecover miner", "number", header.Number, "err", err)
