@@ -51,6 +51,7 @@ var FlagGroups = []FlagGroup{
 			ExtraDataFlag,
 			ConfigFileFlag,
 			OverrideOsaka,
+			OverridePermissionless,
 			StartBlockNumberFlag,
 			BlockGenerationIntervalFlag,
 			BlockGenerationTimeLimitFlag,
@@ -239,6 +240,7 @@ var FlagGroups = []FlagGroup{
 			SubListenPortFlag,
 			MultiChannelUseFlag,
 			MaxConnectionsFlag,
+			ReservedCrossTypeSlotsFlag,
 			MaxPendingPeersFlag,
 			TargetGasLimitFlag,
 			NATFlag,
@@ -286,6 +288,8 @@ var FlagGroups = []FlagGroup{
 			RPCGlobalEVMTimeoutFlag,
 			RPCGlobalEthTxFeeCapFlag,
 			RPCConcurrencyLimit,
+			RPCBatchRequestLimit,
+			RPCBatchResponseMaxSize,
 			RPCNonEthCompatibleFlag,
 			RPCExecutionTimeoutFlag,
 			RPCIdleTimeoutFlag,
@@ -367,12 +371,6 @@ var FlagGroups = []FlagGroup{
 			SnapshotCacheSizeFlag,
 			SnapshotAsyncGen,
 			DocRootFlag,
-		},
-	},
-	{
-		Name: "VRANK",
-		Flags: []cli.Flag{
-			VRankLogFrequencyFlag,
 		},
 	},
 }

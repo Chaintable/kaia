@@ -1,0 +1,365 @@
+package processor
+
+import (
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/smithy-go"
+	"github.com/kaiachain/kaia/common"
+	"github.com/kaiachain/kaia/pipeline/leader"
+	"github.com/kaiachain/kaia/pipeline/metrics"
+	"github.com/kaiachain/kaia/pipeline/types"
+	"github.com/kaiachain/kaia/pipeline/util"
+	"github.com/segmentio/kafka-go"
+)
+
+// PushProcessor is a processor that pushes data to s3 and kafka
+type PushProcessor struct {
+	Bucket          string
+	Uploader        *s3.Client
+	KafkaWriter     *kafka.Writer
+	LastBlockNotice *types.BlockChangeNotification
+	S3TempDir       string
+	quitCh          chan struct{}
+	S3DataCh        chan *DataFile
+	Brokers         []string
+	Topic           string
+}
+
+func NewPushProcessor(region string, bucket string, brokers []string, topic string, s3TempDir string) (*PushProcessor, error) {
+	kafkaWriter := util.NewKafkaWriter(brokers, topic)
+	s3Uploader, err := util.NewS3Client(region)
+	if err != nil {
+		return nil, err
+	}
+
+	if s3TempDir != "" {
+		s3TempDir = filepath.Join(s3TempDir, bucket)
+	}
+
+	pusher := &PushProcessor{
+		Bucket:      bucket,
+		Uploader:    s3Uploader,
+		KafkaWriter: kafkaWriter,
+		S3TempDir:   s3TempDir,
+		quitCh:      make(chan struct{}),
+		S3DataCh:    make(chan *DataFile, 100),
+		Brokers:     brokers,
+		Topic:       topic,
+	}
+
+	return pusher, nil
+}
+
+func (p *PushProcessor) UpdateLastBlock() error {
+	kafkaReader := util.NewKafkaReader(p.Brokers, p.Topic, "")
+	defer kafkaReader.Close()
+
+	lastBlockNotice, err := util.GetLastBlockNotice(kafkaReader)
+	if err != nil {
+		return err
+	}
+	log.Printf("update last block notice: %+v\n", lastBlockNotice)
+
+	// Simply update the last block notice without locking
+	// The locking should be handled at a higher level if needed
+	p.LastBlockNotice = lastBlockNotice
+	return nil
+}
+
+func (p *PushProcessor) StartUploadWork() error {
+	if p.S3TempDir != "" {
+		return p.uploadWork()
+	}
+	return nil
+}
+
+func (p *PushProcessor) uploadWork() error {
+	// check p.S3TempDir is exist, create if not exist
+	if _, err := os.Stat(p.S3TempDir); os.IsNotExist(err) {
+		err = os.MkdirAll(p.S3TempDir, 0755)
+		if err != nil {
+			log.Printf("failed to create dir: %v", err)
+			return err
+		}
+	}
+
+	files, err := os.ReadDir(p.S3TempDir)
+	if err != nil {
+		log.Printf("failed to read dir: %v", err)
+		return nil
+	}
+	for _, file := range files {
+		// 如果是文件夹，跳过
+		if file.IsDir() {
+			continue
+		}
+
+		fullPath := filepath.Join(p.S3TempDir, file.Name())
+
+		// 读取文件内容
+		data, err := os.ReadFile(fullPath)
+		if err != nil {
+			return err
+		}
+
+		// replace - to /
+		s3Key := strings.ReplaceAll(file.Name(), "-", "/")
+		// 残留文件重传不覆盖已存在对象：原对象可能已被 consistency-checker 改写（is_fork）
+		err = p.uploadFileToS3(&DataFile{
+			S3key: s3Key,
+			Data:  data,
+		}, false)
+		if err != nil {
+			return err
+		}
+		// remove tmp file
+		err = os.Remove(fullPath)
+		if err != nil {
+			return err
+		}
+	}
+	go func() {
+		for {
+			select {
+			case <-p.quitCh:
+				return
+			case dataFile := <-p.S3DataCh:
+				go func() {
+					err = p.UploadFileToS3(dataFile)
+					if err != nil {
+						log.Printf("failed to upload files to s3: %v", err)
+						panic(err)
+					}
+					localfilePath := filepath.Join(p.S3TempDir, strings.ReplaceAll(dataFile.S3key, "/", "-"))
+					err = os.Remove(localfilePath)
+					if err != nil {
+						log.Printf("failed to remove tmp file: %v", err)
+					}
+				}()
+			}
+		}
+	}()
+	return nil
+}
+
+func (p *PushProcessor) UploadFile(dataFile *DataFile) error {
+	if p.S3TempDir != "" {
+		localfilePath := filepath.Join(p.S3TempDir, strings.ReplaceAll(dataFile.S3key, "/", "-"))
+		err := os.WriteFile(localfilePath, dataFile.Data, 0644)
+		if err != nil {
+			log.Printf("failed to write file: %v", err)
+			return err
+		}
+		p.S3DataCh <- dataFile
+		return nil
+	} else {
+		return p.UploadFileToS3(dataFile)
+	}
+}
+
+func (p *PushProcessor) UploadFileToS3(file *DataFile) error {
+	return p.uploadFileToS3(file, p.overwriteOnUpload(file))
+}
+
+// overwriteOnUpload 决定上传是否允许覆盖 S3 上已存在的对象。
+// validation 对象会被 consistency-checker 原地改写 is_fork 标记，
+// 覆盖上传会把标记冲回 false，因此一律不覆盖（内容确定性，已存在即跳过）。
+func (p *PushProcessor) overwriteOnUpload(file *DataFile) bool {
+	if file.Kind == "block_file_validation" {
+		return false
+	}
+	return leader.GlobalManager.IsLeader()
+}
+
+func (p *PushProcessor) uploadFileToS3(file *DataFile, overWrite bool) error {
+	start := time.Now()
+	var err error
+	defer func() {
+		if err != nil {
+			log.Printf("failed to upload file to s3: %v", err)
+			return
+		}
+		if file.Kind == "block_file" {
+			metrics.BlockFileUploadTimer.UpdateSince(start)
+		}
+		if file.Kind == "block_file_validation" {
+			metrics.BlockFileValidationTimer.UpdateSince(start)
+		}
+		if file.Kind == "block_header" {
+			metrics.BlockHeaderUploadTimer.UpdateSince(start)
+		}
+		if file.Kind == "state_diff" {
+			metrics.StateDiffUploadTimer.UpdateSince(start)
+		}
+	}()
+	times := 0
+	for {
+		err = util.UploadFileToS3(p.Uploader, p.Bucket, file.S3key, file.Data, overWrite)
+		if err != nil {
+			var apiErr smithy.APIError
+			if (errors.As(err, &apiErr) && apiErr.ErrorCode() == "InternalServerException") || strings.Contains(err.Error(), "StatusCode: 500") ||
+				strings.Contains(err.Error(), "InternalServerError") {
+				log.Printf("HTTP 500 error detected, retrying in 1 second: %v", err)
+			} else {
+				// 任何错误都持续重试，避免上层 panic(err) 把节点搞挂。
+				log.Printf("S3 upload error, retrying in 1 second (attempt %d): %v", times+1, err)
+			}
+			metrics.S3UploadRetryCounter.Inc(1)
+			times++
+			select {
+			case <-p.quitCh:
+				return nil
+			case <-time.After(time.Second):
+			}
+			continue
+		}
+		break
+	}
+	return nil
+}
+
+func (p *PushProcessor) UploadFilesToS3(files []*DataFile) error {
+	var wg sync.WaitGroup
+	var errs []error
+	var lock sync.Mutex
+	for _, file := range files {
+		wg.Add(1)
+		go func(file *DataFile) {
+			times := 0
+			for {
+				err := util.UploadFileToS3(p.Uploader, p.Bucket, file.S3key, file.Data, p.overwriteOnUpload(file))
+				if err != nil {
+					var apiErr smithy.APIError
+					if (errors.As(err, &apiErr) && apiErr.ErrorCode() == "InternalServerException") || strings.Contains(err.Error(), "StatusCode: 500") ||
+						strings.Contains(err.Error(), "InternalServerError") {
+						log.Printf("HTTP 500 error detected, retrying in 1 second: %v", err)
+						time.Sleep(time.Second)
+						continue
+					}
+					if times > 3 {
+						lock.Lock()
+						errs = append(errs, err)
+						lock.Unlock()
+						log.Printf("failed to upload file to s3: %s", err)
+						wg.Done()
+						return
+					}
+					time.Sleep(time.Second)
+					times++
+					continue
+				}
+				break
+			}
+			wg.Done()
+		}(file)
+	}
+	wg.Wait()
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to upload files to s3: %v", errs)
+	}
+	return nil
+}
+
+func (p *PushProcessor) LastPushedBlock() *types.BlockContext {
+	if p.LastBlockNotice == nil {
+		return nil
+	}
+	return &p.LastBlockNotice.NewBlocks[len(p.LastBlockNotice.NewBlocks)-1]
+}
+
+func (p *PushProcessor) PushBlockChangeNotification(blockNotice *types.BlockChangeNotification, firstSeenAt map[common.Hash]int64) error {
+	leader.GlobalManager.Lock()
+	defer leader.GlobalManager.Unlock()
+
+	if leader.GlobalManager.ManualMode {
+		// backup in fixed mode
+		if leader.GlobalManager.IsManualBackup {
+			log.Printf("backup in fixed node, skip push block change notification\n")
+			return nil
+		}
+	} else {
+		// backup in etcd-based failover mode
+		if !leader.GlobalManager.LeaderFailover.IsLeaderNode {
+			log.Printf("backup in etcd node, skip push block change notification\n")
+			return nil
+		}
+	}
+
+	if len(blockNotice.NewBlocks) > 1 {
+		// 1. 首先检查 newBlocks 是否满足我们想要的严格顺序和父子关系
+		valid := true
+		for i := 0; i < len(blockNotice.NewBlocks)-1; i++ {
+			current := blockNotice.NewBlocks[i]
+			next := blockNotice.NewBlocks[i+1]
+
+			// 2. 检查区块高度是否递增
+			if current.BlockNumber+1 != next.BlockNumber {
+				valid = false
+				log.Printf("block number not in strict order: %d, %d", current.BlockNumber, next.BlockNumber)
+				break
+			}
+
+			// 3. 检查当前区块的哈希是否匹配下一个区块的父哈希
+			if current.Hash != next.ParentHash {
+				valid = false
+				log.Printf("parent hash not match: %s, %s", current.Hash, next.ParentHash)
+				break
+			}
+		}
+		if !valid {
+			return fmt.Errorf("new blocks not in strict order or parent-child relationship")
+		}
+	}
+
+	if p.LastPushedBlock() == nil && blockNotice.NewBlocks[0].BlockNumber != 0 {
+		return fmt.Errorf("last pushed block is empty but new block number is not 0")
+	}
+
+	if p.LastPushedBlock() != nil &&
+		(p.LastPushedBlock().BlockNumber >= blockNotice.NewBlocks[len(blockNotice.NewBlocks)-1].BlockNumber) {
+		return nil
+	}
+
+	if p.LastPushedBlock() != nil {
+		if blockNotice.ChangeType == 1 {
+			if p.LastPushedBlock().Hash != blockNotice.NewBlocks[0].ParentHash {
+				return fmt.Errorf("last pushed block hash is not equal to new block parent hash")
+			}
+		}
+		if blockNotice.ChangeType == 2 {
+			if p.LastPushedBlock().Hash != blockNotice.DropBlocks[len(blockNotice.DropBlocks)-1].Hash {
+				return fmt.Errorf("last pushed block hash is not equal to drop block hash")
+			}
+		}
+	}
+
+	start := time.Now()
+	defer func() {
+		metrics.BlockPushTimer.UpdateSince(start)
+
+	}()
+	// 将区块变更通知写入Kafka
+	err := util.WriteBlockNotice(p.KafkaWriter, blockNotice, firstSeenAt)
+	if err != nil {
+		return fmt.Errorf("写入区块变更通知到Kafka失败: %v", err)
+	}
+
+	// 更新最新的区块通知
+	p.LastBlockNotice = blockNotice
+	metrics.LatestBlockNumber.Update(int64(blockNotice.NewBlocks[len(blockNotice.NewBlocks)-1].BlockNumber))
+	metrics.LatestBlockTime.Update(int64(blockNotice.NewBlocks[len(blockNotice.NewBlocks)-1].Timestamp))
+	return nil
+}
+
+func (p *PushProcessor) Close() {
+	p.KafkaWriter.Close()
+	close(p.quitCh)
+}
