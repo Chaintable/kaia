@@ -85,7 +85,7 @@ require (
 	github.com/erigontech/erigon-lib v0.0.0-00010101000000-000000000000
 	github.com/erigontech/secp256k1 v1.2.1-0.20260221042510-ac99ccb83278
 	github.com/google/uuid v1.6.0
-	github.com/klauspost/compress v1.18.0
+	github.com/klauspost/compress v1.18.7
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/satori/go.uuid v1.2.0
 	github.com/segmentio/kafka-go v0.4.47
